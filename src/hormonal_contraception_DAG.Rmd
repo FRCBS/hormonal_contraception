@@ -1,7 +1,7 @@
 ---
-title: "EmergencyProcess_Flowchart_InfusionOnTheScene"
+title: "DAG for anemia in FinOCC"
 author: "Mikko Arvas"
-date: '2022-06-19'
+date: "`r Sys.Date()`"
 output:
   pdf_document: default
   html_document: default
