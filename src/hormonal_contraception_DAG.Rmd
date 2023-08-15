@@ -113,6 +113,7 @@ anemia_dag <- ggdag::dagify(
   HC ~ Pre, # Pregnancy can affect your use/choise of HC
   HC ~ Cb , # Cb can affect your use/choise of HC
   Cb ~ Pre, #Pregnancy can cause child birth
+  A ~ Cb, # Child birth can cause anemia
   HC ~ M , #Migraine can effect choise of HC
   A ~ MS  , # Obesity can cause IDA 
   HC ~ MS, # 'The risk of ischemic stroke in patients using combined oral contraceptives is increased in patients with additional stroke risk factors, including smoking, hypertension, and migraine with aura'
@@ -156,7 +157,7 @@ ggdag_adjustment_set(anemia_dag)
 
 
 Excessive menstrual flow will cause a loop that needs to be blocked. How?
-  -Exclude all persons with excessive menstrual flow diagnosis
+  -Exclude all persons before with excessive menstrual flow diagnosis
   -Similarly cancer could cause all kinds of loops so all persons with cancer diagnosis are best excluded
   
   
@@ -170,6 +171,7 @@ anemia_01_dag <- ggdag::dagify(
   HC ~ Pre, # Pregnancy can affect your use/choise of HC
   HC ~ Cb , # Cb can affect your use/choise of HC
   Cb ~ Pre, #Pregnancy can cause child birth
+  A ~ Cb, # Child birth can cause anemia
   HC ~ M , #Migraine can effect choise of HC
   A ~ MS  , # Obesity can cause IDA 
   #A ~ Mens , # Excessive menstrual flow can cause anemia
@@ -211,6 +213,63 @@ ggdag_paths(anemia_01_dag)
 ```{r}
 ggdag_adjustment_set(anemia_01_dag)
 ```
+
+Cild birth and pregnancy create backdoor paths. Exclude all data prior to first pregnancy.
+
+
+```{r}
+anemia_02_dag <- ggdag::dagify(
+  #HC ~  Mens, # If you have excessive menstrual flow you are more likely to be recommended HC
+  #Mens ~ HC, # If you have HC you won't have excessive menstrual flow
+  #Pre ~ HC, # HC will block pregnancy
+  #HC ~ Pre, # Pregnancy can affect your use/choise of HC
+  #HC ~ Cb , # Cb can affect your use/choise of HC
+  #Cb ~ Pre, #Pregnancy can cause child birth
+  #A ~ Cb, # Child birth can cause anemia
+  HC ~ M , #Migraine can effect choise of HC
+  A ~ MS  , # Obesity can cause IDA 
+  #A ~ Mens , # Excessive menstrual flow can cause anemia
+  HC ~ MS, # 'The risk of ischemic stroke in patients using combined oral contraceptives is increased in patients with additional stroke risk factors, including smoking, hypertension, and migraine with aura'
+  HC ~ Ag, # Age can affect your choise of HC
+  #Pre ~ Ag, # Age reduces your likely hood of getting pregnant
+  MS ~ O  , # Obesity causes metabolic syndrome
+  HC ~ Ac , # Acne can affect your choise of HC
+#  Mens ~ An , # Anorexia can stop excessive menstrual flow
+#  A ~ C,
+  A ~ HC,
+  labels = c(
+    "A" = 'Anemia',
+    "HC" = 'Use/Choise of HC',
+    "Mens"= 'Ex. mens. flow' ,
+    "Pre" = 'Pregnancy' ,
+    "Cb" = 'Child birth' ,
+    "MS" = 'Metabolic syndrome' ,
+    "M" =  'Migraine',
+    "Ag" = 'Age' ,
+    "O"  = 'Obesity',
+    "Ac"  = 'Acne' ,
+    "An" = 'Anorexia',
+    "C" = 'Cancer'
+  ),
+  exposure = "HC",
+  outcome = "A"
+)
+
+ggdag::ggdag(anemia_02_dag, # the dag object we created
+             text = FALSE, # this means the original names won't be shown
+             use_labels = "label") #+ # instead use the new names
+```
+
+```{r}
+ggdag_paths(anemia_02_dag)
+```
+
+```{r}
+ggdag_adjustment_set(anemia_02_dag)
+```
+
+
+
 Hence, the model would be:
 
 A ~  hormonal_contraception + metabolic_syndrome
