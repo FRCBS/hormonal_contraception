@@ -10,8 +10,13 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(DiagrammeR)
+library(ggdag)
 ```
 
+
+# DAGs
+
+# Overall DAG
 
 ```{r}
 #based on https://www.erikigelstrom.com/articles/causal-graphs-in-r-with-diagrammer/
@@ -48,7 +53,8 @@ digraph {
   edge [minlen = 2]
     I->A
     Mens->I
-    HC->Mens
+    HC->Mens #HC will reduce menstrual flow
+    Mens -> HC # If you have excessive menstrual flow you are more likely to be recommended HC
     Mens -> Pre
     HC->Pre
     Cb -> HC
@@ -58,18 +64,23 @@ digraph {
     D->I
     IS->I
     M->HC
-    MS->A
+    MS->A # Overweight (and smoking?) cause IDA 
+    MS -> HC # 'The risk of ischemic stroke in patients using combined oral contraceptives is increased in patients with additional stroke risk factors, including smoking, hypertension, and migraine with aura'
+
     Ag -> HC
   #  O -> A
     O -> MS
     B -> I
     S -> MS
+    S -> HC
     Ac -> HC
-    An -> D
+    D -> An
     An -> Mens
     PE -> Mens
     PE -> I
     C -> A
+    HC -> A
+
 { 
   rank = same; I; A
 #  rank = same; CI; MS
@@ -78,14 +89,127 @@ digraph {
 ")
 ```
 Which diagnoses before anemia diagnoses are bases for exclusion?
+  -Everything we use as basis of exclusion, we don't have to worry about.
 What else could impact on the choice of hormonal contraception?
 Should "Diet" have a direct arrow to menstruation?
 Should "Age" have a direct arrow to menstruation?
 
--Paljon vuotavalle ei kuparikierukkaa
--Tukosriski  -> ei yhdistelmä
--Tupakointi -> tukosriski
--käypähoito suositukset
--yhdistelmä ehkäisy vai progestiini eri kaaviot?
+Should we separate combined oral contraceptive pill and  progesterone only analysis?
 
+# DAG of what we have in FinOCC
 
+```{r}
+grViz("
+digraph {
+  graph [ranksep = 0.2]
+
+  node [shape = plaintext]
+    A    [label = 'Anemia', shape = box]
+  #  I    [label = 'Iron stores']
+
+    HC  [label = 'Hormonal contraception', shape = box ]
+    Mens [label = 'Ex. mens. flow' , shape = box]
+    Pre  [label = 'Pregnancy' , shape = circle]
+    Cb  [label = 'Child birth' , shape = circle]
+    MS  [label = 'Metabolic syndrome' , shape = box]
+  #  D   [label = 'Diet']
+  #  IS  [label = 'Iron supplements']
+    M   [label = 'Migraine', shape = box]
+    Ag  [label = 'Age' , shape = circle]
+  #  B   [label = 'Blood donation', shape = box]
+    O   [label = 'Obesity', shape = box ]
+  #  S   [label = 'Smoking' , shape = box]
+    Ac  [label = 'Acne' , shape = box]
+    An  [label = 'Anorexia' , shape = box]
+  # PE  [label = 'Physical excercise']
+    C   [label = 'Cancer' shape = box]
+    
+    
+    #SEP  [label = 'Socioeconomic position', shape = box]
+
+  edge [minlen = 2]
+    HC->Mens #HC will reduce menstrual flow
+    Mens -> HC # If you have excessive menstrual flow you are more likely to be recommended HC
+    Mens -> Pre
+    HC->Pre
+    Cb -> HC
+    Pre->Cb
+    M->HC
+    MS->A # Overweight (and smoking?) cause IDA 
+    MS -> HC # 'The risk of ischemic stroke in patients using combined oral contraceptives is increased in patients with additional stroke risk factors, including smoking, hypertension, and migraine with aura'
+    Ag -> HC
+    O -> A
+    O -> MS
+    Ac -> HC
+    An -> Mens
+    C -> A
+    HC -> A
+
+{ 
+  rank = same; HC; A
+#  rank = same; CI; MS
+  }
+}
+")
+```
+
+How to resolve the excessive menstrual flow loop?
+  - Drop out all persons with excessive menstrual flow?
+  
+
+```{r}
+grViz("
+digraph {
+  graph [ranksep = 0.2]
+
+  node [shape = plaintext]
+    A    [label = 'Anemia', shape = box]
+  #  I    [label = 'Iron stores']
+
+    HC  [label = 'Hormonal contraception', shape = oval ]
+  #  Mens [label = 'Ex. mens. flow' , shape = box]
+    Pre  [label = 'Pregnancy' , shape = oval]
+    Cb  [label = 'Child birth' , shape = oval]
+    MS  [label = 'Metabolic syndrome' , shape = box]
+  #  D   [label = 'Diet']
+  #  IS  [label = 'Iron supplements']
+    M   [label = 'Migraine', shape = box]
+    Ag  [label = 'Age' , shape = oval]
+  #  B   [label = 'Blood donation', shape = box]
+    O   [label = 'Obesity', shape = box ]
+  #  S   [label = 'Smoking' , shape = box]
+    Ac  [label = 'Acne' , shape = box]
+    An  [label = 'Anorexia' , shape = box]
+  # PE  [label = 'Physical excercise']
+    C   [label = 'Cancer' shape = box]
+    
+    
+    #SEP  [label = 'Socioeconomic position', shape = box]
+
+  edge [minlen = 2]
+  #  HC->Mens #HC will reduce menstrual flow
+   # Mens -> HC # If you have excessive menstrual flow you are more likely to be recommended HC
+  #  Mens -> Pre
+    HC->Pre
+    Cb -> HC
+    Pre->Cb
+    M->HC
+    MS->A # Overweight (and smoking?) cause IDA 
+    MS -> HC # 'The risk of ischemic stroke in patients using combined oral contraceptives is increased in patients with additional stroke risk factors, including smoking, hypertension, and migraine with aura'
+    Ag -> HC
+    O -> A
+    O -> MS
+    Ac -> HC
+    An -> A
+    C -> A
+    HC -> A
+
+{ 
+  rank = same; HC; A
+#  rank = same; CI; MS
+  }
+}
+")
+```
+
+  
