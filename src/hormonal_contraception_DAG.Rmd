@@ -1,0 +1,91 @@
+---
+title: "EmergencyProcess_Flowchart_InfusionOnTheScene"
+author: "Mikko Arvas"
+date: '2022-06-19'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(DiagrammeR)
+```
+
+
+```{r}
+#based on https://www.erikigelstrom.com/articles/causal-graphs-in-r-with-diagrammer/
+
+grViz("
+digraph {
+  graph [ranksep = 0.2]
+
+  node [shape = plaintext]
+    A    [label = 'Anemia', shape = box]
+    I    [label = 'Iron stores']
+
+    HC  [label = 'Hormonal contraception', shape = box ]
+    Mens [label = 'Menstruation' , shape = box]
+    Pre  [label = 'Pregnancy' , shape = box]
+    Cb  [label = 'Child birth' , shape = box]
+    MS  [label = 'Metabolic syndrome' , shape = box]
+    D   [label = 'Diet']
+    IS  [label = 'Iron supplements']
+    M   [label = 'Migraine', shape = box]
+    Ag  [label = 'Age' , shape = box]
+    B   [label = 'Blood donation', shape = box]
+    O   [label = 'Overweight', shape = box ]
+    S   [label = 'Smoking' , shape = box]
+    Ac  [label = 'Acne' , shape = box]
+    An  [label = 'Anorexia' , shape = box]
+    PE  [label = 'Physical excercise']
+    CI  [label = 'Other diagnoses?' , shape = box]
+    C   [label = 'Cancer' shape = box]
+    
+    
+    #SEP  [label = 'Socioeconomic position', shape = box]
+
+  edge [minlen = 2]
+    I->A
+    Mens->I
+    HC->Mens
+    Mens -> Pre
+    HC->Pre
+    Cb -> HC
+    Pre->I
+    Pre->Cb
+    Cb->I
+    D->I
+    IS->I
+    M->HC
+    MS->A
+    Ag -> HC
+  #  O -> A
+    O -> MS
+    B -> I
+    S -> MS
+    Ac -> HC
+    An -> D
+    An -> Mens
+    PE -> Mens
+    PE -> I
+    C -> A
+{ 
+  rank = same; I; A
+#  rank = same; CI; MS
+  }
+}
+")
+```
+Which diagnoses before anemia diagnoses are bases for exclusion?
+What else could impact on the choice of hormonal contraception?
+Should "Diet" have a direct arrow to menstruation?
+Should "Age" have a direct arrow to menstruation?
+
+-Paljon vuotavalle ei kuparikierukkaa
+-Tukosriski  -> ei yhdistelmä
+-Tupakointi -> tukosriski
+-käypähoito suositukset
+-yhdistelmä ehkäisy vai progestiini eri kaaviot?
+
+
