@@ -178,7 +178,7 @@ ggdag_adjustment_set(anemia_dag)
 
 
 Excessive menstrual flow will cause a loop that needs to be blocked. How?
-  -Exclude all persons before with excessive menstrual flow diagnosis
+  -Exclude all persons with excessive menstrual flow diagnosis ?
   -Similarly cancer could cause all kinds of loops so all persons with cancer diagnosis are best excluded
   
   
@@ -295,7 +295,7 @@ Hence, the model would be:
 
 A ~  hormonal_contraception + metabolic_syndrome
 
-But what do we do with age? Based on FinDonor it could be considred causal for anemia. Based on PBAC it is sort proxy to menstruation. It needs to be accounted for? Do we just make models with and without it as it also influences choise of HC ? Or can we consider some age group where choise of HC would not be impacted by age??? This needs experimentation on the DAG.
+But what do we do with age? Based on FinDonor it could be considered causal for anemia. Based on PBAC it could be a proxy to menstruation. It needs to be accounted for? Do we just make models with and without it as it also influences choise of HC ? Or can we consider some age group where choise of HC would not be impacted by age??? This needs experimentation on the DAG.
 
 Do we want to make an analysis plan and submit it before analysis!?
 
@@ -324,7 +324,13 @@ plot(g, layout=-l$layout[,2:1], edge.arrow.size = 0.4)
 
 ```{r}
 
-ce1 <- causal.effect(y = "A", x = "HC", z = NULL, G = g, expr = TRUE)
+#ce1 <- causal.effect(y = "A", x = "HC", z = NULL, G = g, expr = TRUE)
+
+# Error in `causal.effect()`:
+# ! Graph 'G' is not a DAG
+# Backtrace:
+#  1. causaleffect::causal.effect(...)
+# Execution halted
 
 ```
 
