@@ -11,6 +11,9 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 library(DiagrammeR)
 library(ggdag)
+library(causaleffect)
+library(igraph)
+library(tidyverse)
 ```
 
 
@@ -148,6 +151,24 @@ ggdag::ggdag(anemia_dag, # the dag object we created
 ```
 
 ```{r}
+
+tidy_dagitty(anemia_dag)
+
+```
+
+```{r}
+adag.tibble <- tidy_dagitty(anemia_dag)$data
+colnames(adag.tibble)
+```
+```{r}
+
+adag.tibble %>% select(name, direction, to) %>% summary()
+
+```
+
+
+
+```{r}
 ggdag_paths(anemia_dag)
 ```
 
@@ -278,3 +299,48 @@ But what do we do with age? Based on FinDonor it could be considred causal for a
 
 Do we want to make an analysis plan and submit it before analysis!?
 
+
+# causaleffect experiments
+
+```{r}
+igraphyfy <- function(dagify.object) {
+  tmp <- tidy_dagitty(dagify.object)$data
+  tmp <- tmp %>% select(name, to) %>% 
+  as.matrix() %>% # igraph wants a matrix
+  na.omit() #there was A -> NA , maybe to spesify outcome
+  tmp <- graph_from_edgelist(tmp, directed = TRUE)
+  invisible(tmp)
+}
+```
+
+
+```{r}
+
+g <- igraphyfy(anemia_dag)
+l <- layout_with_sugiyama(g)
+# plot
+plot(g, layout=-l$layout[,2:1], edge.arrow.size = 0.4)
+```
+
+```{r}
+
+ce1 <- causal.effect(y = "A", x = "HC", z = NULL, G = g, expr = TRUE)
+
+```
+
+```{r}
+
+g <- igraphyfy(anemia_02_dag)
+l <- layout_with_sugiyama(g)
+# plot
+plot(g, layout=-l$layout[,2:1], edge.arrow.size = 0.4)
+
+```
+
+```{r}
+
+ce1 <- causal.effect(y = "A", x = "HC", z = NULL, G = g, expr = TRUE)
+ce1
+```
+
+And what does that mean?
