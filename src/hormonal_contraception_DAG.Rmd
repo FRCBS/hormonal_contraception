@@ -274,3 +274,7 @@ Hence, the model would be:
 
 A ~  hormonal_contraception + metabolic_syndrome
 
+But what do we do with age? Based on FinDonor it could be considred causal for anemia. Based on PBAC it is sort proxy to menstruation. It needs to be accounted for? Do we just make models with and without it as it also influences choise of HC ? Or can we consider some age group where choise of HC would not be impacted by age??? This needs experimentation on the DAG.
+
+Do we want to make an analysis plan and submit it before analysis!?
+
