@@ -17,7 +17,124 @@ library(tidyverse)
 ```
 
 
+# Functions
+
+```{r}
+from_ggdag_2_diagrammer <- function(ggdag.object) {
+  tmp <- tidy_dagitty(ggdag.object)$data
+ #tmp <- tidy_dagitty(anemia_dag)$data
+  edges <- tmp %>% 
+    select(name, to) %>% 
+    rename("from"="name") %>% 
+    na.omit()
+  
+   nodes <- tmp %>% 
+   select(name,label) %>%
+   #  select(name) %>% 
+   rename("id"="name") %>%
+   distinct() %>%
+   na.omit()
+  g <- create_graph(
+    directed = TRUE,
+    attr_theme = "tb"
+  )
+  g<- add_nodes_from_table(g,
+                           table = nodes,
+                           label_col = label)
+  g <- add_edges_from_table(graph =g,
+                            table=edges,
+                            from_col = from,
+                            to_col = to,
+                            from_to_map=id_external)
+  invisible(g)
+}
+
+```
+
+
+```{r}
+from_ggdag_2_igraph <- function(dagify.object) {
+  tmp <- tidy_dagitty(dagify.object)$data
+  tmp <- tmp %>% select(name, to) %>% 
+  as.matrix() %>% # igraph wants a matrix
+  na.omit() #there was A -> NA , maybe to spesify outcome
+  tmp <- graph_from_edgelist(tmp, directed = TRUE)
+  invisible(tmp)
+}
+
+```
+
+
 # DAGs
+
+1. create graph with https://rich-iannone.github.io/DiagrammeR/reference/create_graph.html
+
+2. display it with grViz?
+
+3. can graph from create graph be imported to ggdag
+
+https://rdrr.io/cran/DiagrammeR/man/from_igraph.html
+
+try to plot with Diagrammer the ggdag object
+
+# Pastricha DAG
+
+
+```{r}
+
+pastricha_dag <- ggdag::dagify(
+  IS ~ IA,
+  II ~ VD, # Low haem iron content (eg, from a vegetarian or vegan diet)
+  
+  IS ~ II, #When iron intake is inadequate to meet requirements or to compensate for physiological or pathological losses, body iron stores become depleted
+  A ~ Iinfl, #In patients with inflammation, with- holding of iron from the plasma promotes iron deficient erythro poiesis and anaemia despite adequate body iron stores (functional iron deficiency).
+  A ~ IS, # Absolute ID occurs when iron stores are insufficient to meet the needs of the individual, and is particularly common in young children (younger than 5 years) and premenopausal (especially pregnant) women
+  IS ~ Mens,  # The main causes of absolute ID are excessive blood loss...
+  IS ~ Gblood,  # Gastrointestinal blood loss is the most important cause of ID in men and postmenopausal women
+  Gblood ~ Erosion,  # erosions or ulcers
+  Gblood ~ CC, #The most important occult causes of lower gastrointestinal bleeding are colorectal cancer
+  Gblood ~ InflBo, #Inflamatory bowel disease;
+  IS ~ BD,
+  
+  labels = c(
+    "A" = 'Anemia',
+    "HC" = 'Use/Choise of HC',
+    "Mens"= 'Ex. mens. flow' ,
+    "Pre" = 'Pregnancy' ,
+    "Cb" = 'Child birth' ,
+    "MS" = 'Metabolic syndrome' ,
+    "M" =  'Migraine',
+    "Ag" = 'Age' ,
+    "O"  = 'Obesity',
+    "Ac"  = 'Acne' ,
+    "An" = 'Anorexia',
+    "C" = 'Cancer',
+    "II" = 'Iron intake',
+    "IS" = 'Iron stores',
+   "Iinfl" = 'Inflammation',
+   "Gblood" = 'Gastrointestinal blood loss',
+   "Erosion" = "Erosion",
+   "CC" = 'Colon cancer',
+   "InflBo" = 'Inflamatory bowel disease',
+   "BD" = 'Blood donation',
+   "IA" = 'Iron absortion'
+   
+  ),
+  exposure = "HC",
+  outcome = "A"
+)
+
+
+```
+
+
+
+```{r}
+ggdag::ggdag(pastricha_dag, # the dag object we created
+             text = FALSE, # this means the original names won't be shown
+             use_labels = "label") #+ # instead use the new names
+```
+
 
 # Overall DAG
 
@@ -103,15 +220,22 @@ Should "Age" have a direct arrow to menstruation?
 
 Should we separate combined oral contraceptive pill and  progesterone only analysis?
 
+
+```{r}
+
+```
+
+
+
 # DAG of what we have in FinOCC
 
 ```{r}
 
 anemia_dag <- ggdag::dagify(
   HC ~  Mens, # If you have excessive menstrual flow you are more likely to be recommended HC
-  Mens ~ HC, # If you have HC you won't have excessive menstrual flow
+  Mens ~ HC, # If you have HC you won't have menstruation/excessive menstrual flow
   Mens ~ An , # Anorexia can stop excessive menstrual flow
-  A ~ Mens , # Excessive menstrual flow can cause anemia
+  A ~ Mens , # menstruation/excessive menstrual flow can cause anemia
   Pre ~ HC, # HC will block pregnancy
   HC ~ Pre, # Pregnancy can affect your use/choise of HC
   HC ~ Cb , # Cb can affect your use/choise of HC
@@ -155,6 +279,33 @@ ggdag::ggdag(anemia_dag, # the dag object we created
 tidy_dagitty(anemia_dag)
 
 ```
+
+## Plot with diagrammeR
+
+```{r}
+
+
+
+g <- from_ggdag_2_diagrammer(anemia_dag)
+
+
+```
+
+Can I then the DiagrammeR to plot the graph and extract co-ordinates from it to make the ggdag look better?
+
+
+```{r}
+render_graph(
+  g, 
+#  layout="tree"
+)
+```
+
+
+```{r}
+#grViz(g)
+```
+
 
 ```{r}
 adag.tibble <- tidy_dagitty(anemia_dag)$data
@@ -302,21 +453,12 @@ Do we want to make an analysis plan and submit it before analysis!?
 
 # causaleffect experiments
 
-```{r}
-igraphyfy <- function(dagify.object) {
-  tmp <- tidy_dagitty(dagify.object)$data
-  tmp <- tmp %>% select(name, to) %>% 
-  as.matrix() %>% # igraph wants a matrix
-  na.omit() #there was A -> NA , maybe to spesify outcome
-  tmp <- graph_from_edgelist(tmp, directed = TRUE)
-  invisible(tmp)
-}
 ```
 
 
 ```{r}
 
-g <- igraphyfy(anemia_dag)
+g <- from_ggdag_2_igraph(anemia_dag)
 l <- layout_with_sugiyama(g)
 # plot
 plot(g, layout=-l$layout[,2:1], edge.arrow.size = 0.4)
