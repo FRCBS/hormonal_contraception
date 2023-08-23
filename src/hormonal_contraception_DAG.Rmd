@@ -14,6 +14,7 @@ library(ggdag)
 library(causaleffect)
 library(igraph)
 library(tidyverse)
+library(dagitty)
 ```
 
 
@@ -65,78 +66,232 @@ from_ggdag_2_igraph <- function(dagify.object) {
 ```
 
 
-# DAGs
+# Pastricha DAG with hormonal contraception
 
-1. create graph with https://rich-iannone.github.io/DiagrammeR/reference/create_graph.html
-
-2. display it with grViz?
-
-3. can graph from create graph be imported to ggdag
-
-https://rdrr.io/cran/DiagrammeR/man/from_igraph.html
-
-try to plot with Diagrammer the ggdag object
-
-# Pastricha DAG
-
+Based on "Iron deficiency" 
+Sant-Rayn Pasricha, Jason Tye-Din, Martina U Muckenthaler, Dorine W Swinkels 2021 Lancet
+http://dx.doi.org/10.1016/S0140-6736(20)32594-0
 
 ```{r}
 
 pastricha_dag <- ggdag::dagify(
-  IS ~ IA,
   II ~ VD, # Low haem iron content (eg, from a vegetarian or vegan diet)
-  
+  II ~ ConInh, # Concomitant consumption of inhibitors of iron absorption (eg, calcium or tea)
+  II ~ InAcid, # Inadequate acidification
+  II ~ InMyc, # Intestinal mycosal dysfunction
   IS ~ II, #When iron intake is inadequate to meet requirements or to compensate for physiological or pathological losses, body iron stores become depleted
-  A ~ Iinfl, #In patients with inflammation, with- holding of iron from the plasma promotes iron deficient erythro poiesis and anaemia despite adequate body iron stores (functional iron deficiency).
+  A ~ Iinfl, #In patients with inflammation, withholding of iron from the plasma promotes iron deficient erythropoiesis and anaemia despite adequate body iron stores (functional iron deficiency). Obesity
   A ~ IS, # Absolute ID occurs when iron stores are insufficient to meet the needs of the individual, and is particularly common in young children (younger than 5 years) and premenopausal (especially pregnant) women
   IS ~ Mens,  # The main causes of absolute ID are excessive blood loss...
-  IS ~ Gblood,  # Gastrointestinal blood loss is the most important cause of ID in men and postmenopausal women
-  Gblood ~ Erosion,  # erosions or ulcers
-  Gblood ~ CC, #The most important occult causes of lower gastrointestinal bleeding are colorectal cancer
-  Gblood ~ InflBo, #Inflamatory bowel disease;
+  Mens ~ HC,
+  IS ~ InLoss,  # Gastrointestinal blood loss is the most important cause of ID in men and postmenopausal women
   IS ~ BD,
+  IS ~ Cb,
+  Cb ~ Pre,
+  
+  
   
   labels = c(
-    "A" = 'Anemia',
-    "HC" = 'Use/Choise of HC',
-    "Mens"= 'Ex. mens. flow' ,
+    "A" = 'Iron\ndeficiency\nanemia',
+    "HC" = 'Use/Choise\nof HC',
+    "Mens"= 'Menstruation' ,
     "Pre" = 'Pregnancy' ,
-    "Cb" = 'Child birth' ,
-    "MS" = 'Metabolic syndrome' ,
-    "M" =  'Migraine',
-    "Ag" = 'Age' ,
-    "O"  = 'Obesity',
-    "Ac"  = 'Acne' ,
-    "An" = 'Anorexia',
-    "C" = 'Cancer',
-    "II" = 'Iron intake',
-    "IS" = 'Iron stores',
+    "Cb" = 'Child\nbirth' ,
+    "II" = 'Iron\nintake',
+    "IS" = 'Iron\nstores',
    "Iinfl" = 'Inflammation',
-   "Gblood" = 'Gastrointestinal blood loss',
+   "InLoss" = 'Gastrointestinal\nblood loss',
    "Erosion" = "Erosion",
    "CC" = 'Colon cancer',
    "InflBo" = 'Inflamatory bowel disease',
-   "BD" = 'Blood donation',
-   "IA" = 'Iron absortion'
+   "BD" = 'Blood\ndonation',
+   "ConInh" = 'Consumption\nof inhibitors',
+   "InMyc" = 'Intestinal\ndysfunction',
+   "InAcid" = 'Inadequate\nacidification',
+   "VD" = 'Low\niron\ndiet'
    
   ),
   exposure = "HC",
   outcome = "A"
 )
 
+pastricha_dag.diag <- from_ggdag_2_diagrammer(pastricha_dag)
+render_graph(
+  pastricha_dag.diag, 
+#  layout="tree"
+)
+```
+
+```{r}
+latents(pastricha_dag) <- c("II","IS")
+exposures(pastricha_dag) <- c("HC")
+outcomes(pastricha_dag) <- c("A")
 
 ```
+
+
+```{r}
+ggdag_adjustment_set(pastricha_dag)
+#how to define the latent variables to get the corract adjustement set
+```
+
+‘Backdoor Paths Unconditionally Closed’ means that, assuming the DAG we have drawn is correct, we may obtain an unbiased estimate of X on Y without including additional variables.
+
+```{r}
+ggdag_instrumental(pastricha_dag)
+```
+
+# Pastricha DAG with added complexity
+
+
+```{r}
+pastricha_dag_mens <- ggdag::dagify(
+  II ~ VD, # Low haem iron content (eg, from a vegetarian or vegan diet)
+  II ~ ConInh, # Concomitant consumption of inhibitors of iron absorption (eg, calcium or tea)
+  II ~ InAcid, # Inadequate acidification
+  II ~ InMyc, # Intestinal mycosal dysfunction
+  IS ~ II, #When iron intake is inadequate to meet requirements or to compensate for physiological or pathological losses, body iron stores become depleted
+  A ~ Iinfl, #In patients with inflammation, withholding of iron from the plasma promotes iron deficient erythropoiesis and anaemia despite adequate body iron stores (functional iron deficiency). Obesity
+  A ~ IS, # Absolute ID occurs when iron stores are insufficient to meet the needs of the individual, and is particularly common in young children (younger than 5 years) and premenopausal (especially pregnant) women
+  IS ~ Mens,  # The main causes of absolute ID are excessive blood loss...
+  Mens ~ HC,
+  IS ~ InLoss,  # Gastrointestinal blood loss is the most important cause of ID in men and postmenopausal women
+  IS ~ BD,
+  IS ~ Cb,
+  Cb ~ Pre,
+  Mens ~ IS, # Your iron store can influence your menstruation
+  HC ~ Mens, # Your menstruation can influece you choise of HC
+  HC ~ Iinfl, # obesity and mentabolic disease can influence your choise of HC
+  HC ~ Cb, # having kids will impact on you choice of hormonal contraception
+  
+  
+  
+  labels = c(
+    "A" = 'Iron\ndeficiency\nanemia',
+    "HC" = 'Use/Choise\nof HC',
+    "Mens"= 'Menstruation' ,
+    "Pre" = 'Pregnancy' ,
+    "Cb" = 'Child\nbirth' ,
+    "II" = 'Iron\nintake',
+    "IS" = 'Iron\nstores',
+   "Iinfl" = 'Inflammation',
+   "InLoss" = 'Gastrointestinal\nblood loss',
+   "Erosion" = "Erosion",
+   "CC" = 'Colon cancer',
+   "InflBo" = 'Inflamatory bowel disease',
+   "BD" = 'Blood\ndonation',
+   "ConInh" = 'Consumption\nof inhibitors',
+   "InMyc" = 'Intestinal\ndysfunction',
+   "InAcid" = 'Inadequate\nacidification',
+   "VD" = 'Low\niron\ndiet'
+   
+  ),
+  exposure = "HC",
+  outcome = "A"
+)
+
+pastricha_dag.diag <- from_ggdag_2_diagrammer(pastricha_dag_mens)
+render_graph(
+  pastricha_dag.diag, 
+#  layout="tree"
+)
+```
+
+
+```{r}
+latents(pastricha_dag_mens) <- c("II","IS")
+exposures(pastricha_dag_mens) <- c("HC")
+outcomes(pastricha_dag_mens) <- c("A")
+
+```
+
+
+```{r}
+ggdag_adjustment_set(pastricha_dag_mens)
+#how to define the latent variables to get the corract adjustement set
+```
+
 
 
 
 ```{r}
-ggdag::ggdag(pastricha_dag, # the dag object we created
-             text = FALSE, # this means the original names won't be shown
-             use_labels = "label") #+ # instead use the new names
+ggdag_instrumental(pastricha_dag_mens)
+```
+
+# Pastricha DAG with added complexity and exclusions
+
+Child birth and pregnancy create backdoor paths. Exclude all data prior to first pregnancy.
+Use of hormonal contraception to treat excessive menstrual flow. Exclude persons with excessive menstrual flow.
+Similarly cancer could cause all kinds of loops so all persons with cancer diagnosis are best excluded.
+
+```{r}
+pastricha_dag_mens_no <- ggdag::dagify(
+  II ~ VD, # Low haem iron content (eg, from a vegetarian or vegan diet)
+  II ~ ConInh, # Concomitant consumption of inhibitors of iron absorption (eg, calcium or tea)
+  II ~ InAcid, # Inadequate acidification
+  II ~ InMyc, # Intestinal mycosal dysfunction
+  IS ~ II, #When iron intake is inadequate to meet requirements or to compensate for physiological or pathological losses, body iron stores become depleted
+  A ~ Iinfl, #In patients with inflammation, withholding of iron from the plasma promotes iron deficient erythropoiesis and anaemia despite adequate body iron stores (functional iron deficiency). Obesity
+  A ~ IS, # Absolute ID occurs when iron stores are insufficient to meet the needs of the individual, and is particularly common in young children (younger than 5 years) and premenopausal (especially pregnant) women
+  IS ~ Mens,  # The main causes of absolute ID are excessive blood loss...
+  Mens ~ HC,
+  IS ~ InLoss,  # Gastrointestinal blood loss is the most important cause of ID in men and postmenopausal women
+  IS ~ BD,
+  Mens ~ IS, # Your iron store can influence your menstruation
+  HC ~ Iinfl, # obesity and mentabolic disease can influence your choise of HC
+ 
+  labels = c(
+    "A" = 'Iron\ndeficiency\nanemia',
+    "HC" = 'Use/Choise\nof HC',
+    "Mens"= 'Menstruation' ,
+    "Pre" = 'Pregnancy' ,
+    "Cb" = 'Child\nbirth' ,
+    "II" = 'Iron\nintake',
+    "IS" = 'Iron\nstores',
+   "Iinfl" = 'Inflammation',
+   "InLoss" = 'Gastrointestinal\nblood loss',
+   "Erosion" = "Erosion",
+   "CC" = 'Colon cancer',
+   "InflBo" = 'Inflamatory bowel disease',
+   "BD" = 'Blood\ndonation',
+   "ConInh" = 'Consumption\nof inhibitors',
+   "InMyc" = 'Intestinal\ndysfunction',
+   "InAcid" = 'Inadequate\nacidification',
+   "VD" = 'Low\niron\ndiet'
+   
+  ),
+  exposure = "HC",
+  outcome = "A"
+)
+
+pastricha_dag.diag <- from_ggdag_2_diagrammer(pastricha_dag_mens_no)
+render_graph(
+  pastricha_dag.diag, 
+#  layout="tree"
+)
 ```
 
 
-# Overall DAG
+```{r}
+latents(pastricha_dag_mens_no) <- c("II","IS")
+exposures(pastricha_dag_mens_no) <- c("HC")
+outcomes(pastricha_dag_mens_no) <- c("A")
+
+```
+
+
+```{r}
+ggdag_adjustment_set(pastricha_dag_mens_no)
+```
+
+
+```{r}
+ggdag_instrumental(pastricha_dag_mens_no)
+```
+# Previous experiments
+
+
+## Overall DAG
 
 ```{r}
 #based on https://www.erikigelstrom.com/articles/causal-graphs-in-r-with-diagrammer/
@@ -221,13 +376,10 @@ Should "Age" have a direct arrow to menstruation?
 Should we separate combined oral contraceptive pill and  progesterone only analysis?
 
 
-```{r}
-
-```
 
 
 
-# DAG of what we have in FinOCC
+## DAG of what we have in FinOCC
 
 ```{r}
 
@@ -280,7 +432,7 @@ tidy_dagitty(anemia_dag)
 
 ```
 
-## Plot with diagrammeR
+### Plot with diagrammeR
 
 ```{r}
 
@@ -386,7 +538,6 @@ ggdag_paths(anemia_01_dag)
 ggdag_adjustment_set(anemia_01_dag)
 ```
 
-Cild birth and pregnancy create backdoor paths. Exclude all data prior to first pregnancy.
 
 
 ```{r}
@@ -451,9 +602,8 @@ But what do we do with age? Based on FinDonor it could be considered causal for 
 Do we want to make an analysis plan and submit it before analysis!?
 
 
-# causaleffect experiments
+## causaleffect experiments
 
-```
 
 
 ```{r}
@@ -478,7 +628,7 @@ plot(g, layout=-l$layout[,2:1], edge.arrow.size = 0.4)
 
 ```{r}
 
-g <- igraphyfy(anemia_02_dag)
+g <- from_ggdag_2_igraph(anemia_02_dag)
 l <- layout_with_sugiyama(g)
 # plot
 plot(g, layout=-l$layout[,2:1], edge.arrow.size = 0.4)
@@ -492,3 +642,16 @@ ce1
 ```
 
 And what does that mean?
+
+
+Would this be better?
+
+1. create graph with https://rich-iannone.github.io/DiagrammeR/reference/create_graph.html
+
+2. display it with grViz?
+
+3. can graph from create graph be imported to ggdag
+
+https://rdrr.io/cran/DiagrammeR/man/from_igraph.html
+
+try to plot with Diagrammer the ggdag object
