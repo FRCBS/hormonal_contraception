@@ -17,6 +17,12 @@ library(tidyverse)
 library(dagitty)
 ```
 
+TODO:
+
+-remove the old part as separate script
+
+-what do we do with age?
+
 
 # Functions
 
