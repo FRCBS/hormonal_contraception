@@ -21,8 +21,19 @@ TODO:
 
 -remove the old part as separate script
 
--what do we do with age?
-
+-what do we do with age and time ? Can we break loops with some timing?
+  
+  -if we consider only women with out kids does age matter for inflammatory status, choise of HC or something else ?
+  
+  -yes, you get 0.5 kg per weight so the older you are the more likely have some chronic inflammation?
+  
+  -but Eeva said
+  
+    -younger are more likely to get combination pills, they can used to treat acne and menstrual disorders and combination pill raise risk of venous thromboembolism
+  
+    -for progesterone pills age should not matter
+    
+    -> so there is age affect but also possibly the age effect depends on the hc type
 
 # Functions
 
@@ -160,15 +171,19 @@ pastricha_dag_mens <- ggdag::dagify(
   A ~ Iinfl, #In patients with inflammation, withholding of iron from the plasma promotes iron deficient erythropoiesis and anaemia despite adequate body iron stores (functional iron deficiency). Obesity
   A ~ IS, # Absolute ID occurs when iron stores are insufficient to meet the needs of the individual, and is particularly common in young children (younger than 5 years) and premenopausal (especially pregnant) women
   IS ~ Mens,  # The main causes of absolute ID are excessive blood loss...
+  Pre ~ IS , # if you are low own iron you are less likely to get pregnant
   Mens ~ HC,
   IS ~ InLoss,  # Gastrointestinal blood loss is the most important cause of ID in men and postmenopausal women
-  IS ~ BD,
+  IS ~ BD, # Blood donation can cause iron deficiency
+  BD ~ IS, # If you are low own iron you can't get to donate 
   IS ~ Cb,
   Cb ~ Pre,
   Mens ~ IS, # Your iron store can influence your menstruation
   HC ~ Mens, # Your menstruation can influece you choise of HC
   HC ~ Iinfl, # obesity and mentabolic disease can influence your choise of HC
   HC ~ Cb, # having kids will impact on you choice of hormonal contraception
+  HC ~ Age, # age affect your choice of contraception
+  Iinfl ~ Age, # the older you are the more inflamed you get
   
   
   
@@ -189,7 +204,8 @@ pastricha_dag_mens <- ggdag::dagify(
    "ConInh" = 'Consumption\nof inhibitors',
    "InMyc" = 'Intestinal\ndysfunction',
    "InAcid" = 'Inadequate\nacidification',
-   "VD" = 'Low\niron\ndiet'
+   "VD" = 'Low\niron\ndiet',
+   "Age" = 'Age'
    
   ),
   exposure = "HC",
@@ -242,9 +258,13 @@ pastricha_dag_mens_no <- ggdag::dagify(
   IS ~ Mens,  # The main causes of absolute ID are excessive blood loss...
   Mens ~ HC,
   IS ~ InLoss,  # Gastrointestinal blood loss is the most important cause of ID in men and postmenopausal women
-  IS ~ BD,
+  IS ~ BD, # Blood donation can cause iron deficiency
+  BD ~ IS, # If you are low own iron you can't get to donate 
   Mens ~ IS, # Your iron store can influence your menstruation
   HC ~ Iinfl, # obesity and mentabolic disease can influence your choise of HC
+  HC ~ Age, # age affect your choice of contraception
+  Iinfl ~ Age, # the older you are the more inflamed you get
+
  
   labels = c(
     "A" = 'Iron\ndeficiency\nanemia',
@@ -263,7 +283,8 @@ pastricha_dag_mens_no <- ggdag::dagify(
    "ConInh" = 'Consumption\nof inhibitors',
    "InMyc" = 'Intestinal\ndysfunction',
    "InAcid" = 'Inadequate\nacidification',
-   "VD" = 'Low\niron\ndiet'
+   "VD" = 'Low\niron\ndiet',
+   "Age" = 'Age'
    
   ),
   exposure = "HC",
