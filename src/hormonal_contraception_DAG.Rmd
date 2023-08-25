@@ -19,21 +19,26 @@ library(dagitty)
 
 TODO:
 
--remove the old part as separate script
 
 -what do we do with age and time ? Can we break loops with some timing?
+
   
   -if we consider only women with out kids does age matter for inflammatory status, choise of HC or something else ?
   
-  -yes, you get 0.5 kg per weight so the older you are the more likely have some chronic inflammation?
   
-  -but Eeva said
+  - Eeva said
   
     -younger are more likely to get combination pills, they can used to treat acne and menstrual disorders and combination pill raise risk of venous thromboembolism
   
-    -for progesterone pills age should not matter
+    -for progestine pills age should not matter
     
     -> so there is age affect but also possibly the age effect depends on the hc type
+    
+  -how about how long a product has been used? the longer you have used it the more time it has had to have an effect? and this also is dependent on age. Could Muriel give me some pointers on how to address it? Could it be a percentage of age or is an interaction better as the estimate really don't matter? Do we have the dates of when the products were ordered? Or should we do a survival analysis?
+  
+-should we add a propensity score analysis with a score on how likely one is to use HC
+
+-trial emulation?
 
 # Functions
 
@@ -177,14 +182,15 @@ pastricha_dag_mens <- ggdag::dagify(
   IS ~ BD, # Blood donation can cause iron deficiency
   BD ~ IS, # If you are low own iron you can't get to donate 
   IS ~ Cb,
+  IS ~ Pre,
   Cb ~ Pre,
   Mens ~ IS, # Your iron store can influence your menstruation
   HC ~ Mens, # Your menstruation can influece you choise of HC
   HC ~ Iinfl, # obesity and mentabolic disease can influence your choise of HC
   HC ~ Cb, # having kids will impact on you choice of hormonal contraception
-  HC ~ Age, # age affect your choice of contraception
-  Iinfl ~ Age, # the older you are the more inflamed you get
-  
+  HC ~ Age, # age affect your choice of contraception, should there HC X age interaction
+  Iinfl ~ Age, # the older you are the more inflamed you get, "spline"?
+  A ~ Age, # due to iron requirements of growth younger women tend to be more iron deficient aas they have not yet requperated from growth. Should this be a "spline" ?   
   
   
   labels = c(
@@ -240,6 +246,8 @@ ggdag_adjustment_set(pastricha_dag_mens)
 ggdag_instrumental(pastricha_dag_mens)
 ```
 
+
+
 # Pastricha DAG with added complexity and exclusions
 
 Child birth and pregnancy create backdoor paths. Exclude all data prior to first pregnancy.
@@ -262,9 +270,9 @@ pastricha_dag_mens_no <- ggdag::dagify(
   BD ~ IS, # If you are low own iron you can't get to donate 
   Mens ~ IS, # Your iron store can influence your menstruation
   HC ~ Iinfl, # obesity and mentabolic disease can influence your choise of HC
-  HC ~ Age, # age affect your choice of contraception
-  Iinfl ~ Age, # the older you are the more inflamed you get
-
+  HC ~ Age, # age affect your choice of contraception, should there HC X age interaction
+  Iinfl ~ Age, # the older you are the more inflamed you get, "spline"?
+  A ~ Age, # due to iron requirements of growth younger women tend to be more iron deficient aas they have not yet requperated from growth. Should this be a "spline" ? 
  
   labels = c(
     "A" = 'Iron\ndeficiency\nanemia',
@@ -317,368 +325,3 @@ ggdag_instrumental(pastricha_dag_mens_no)
 ```
 # Previous experiments
 
-
-## Overall DAG
-
-```{r}
-#based on https://www.erikigelstrom.com/articles/causal-graphs-in-r-with-diagrammer/
-
-grViz("
-digraph {
-  graph [ranksep = 0.2]
-
-  node [shape = plaintext]
-    A    [label = 'Anemia', shape = box]
-    I    [label = 'Iron stores']
-
-    HC  [label = 'Hormonal contraception', shape = box ]
-    Mens [label = 'Menstruation' , shape = box]
-    Pre  [label = 'Pregnancy' , shape = box]
-    Cb  [label = 'Child birth' , shape = box]
-    MS  [label = 'Metabolic syndrome' , shape = box]
-    D   [label = 'Diet']
-    IS  [label = 'Iron supplements']
-    M   [label = 'Migraine', shape = box]
-    Ag  [label = 'Age' , shape = box]
-    B   [label = 'Blood donation', shape = box]
-    O   [label = 'Overweight', shape = box ]
-    S   [label = 'Smoking' , shape = box]
-    Ac  [label = 'Acne' , shape = box]
-    An  [label = 'Anorexia' , shape = box]
-    PE  [label = 'Physical excercise']
-    CI  [label = 'Other diagnoses?' , shape = box]
-    C   [label = 'Cancer' shape = box]
-    
-    
-    #SEP  [label = 'Socioeconomic position', shape = box]
-
-  edge [minlen = 2]
-    I->A
-    Mens->I
-    HC->Mens #HC will reduce menstrual flow
-    Mens -> HC # If you have excessive menstrual flow you are more likely to be recommended HC
-    Mens -> Pre
-    HC->Pre
-    Cb -> HC
-    Pre->I
-    Pre->Cb
-    Cb->I
-    D->I
-    IS->I
-    M->HC
-    MS->A # Overweight (and smoking?) cause IDA 
-    MS -> HC # 'The risk of ischemic stroke in patients using combined oral contraceptives is increased in patients with additional stroke risk factors, including smoking, hypertension, and migraine with aura'
-
-    Ag -> HC
-  #  O -> A
-    O -> MS
-    B -> I
-    S -> MS
-    S -> HC
-    Ac -> HC
-    D -> An
-    An -> Mens
-    PE -> Mens
-    PE -> I
-    C -> A
-    HC -> A
-
-{ 
-  rank = same; I; A
-#  rank = same; CI; MS
-  }
-}
-")
-```
-Which diagnoses before anemia diagnoses are bases for exclusion?
-
-  -Everything we use as basis of exclusion, we don't have to worry about.
-
-What else could impact on the choice of hormonal contraception?
-
-Should "Diet" have a direct arrow to menstruation?
-
-Should "Age" have a direct arrow to menstruation?
-
-Should we separate combined oral contraceptive pill and  progesterone only analysis?
-
-
-
-
-
-## DAG of what we have in FinOCC
-
-```{r}
-
-anemia_dag <- ggdag::dagify(
-  HC ~  Mens, # If you have excessive menstrual flow you are more likely to be recommended HC
-  Mens ~ HC, # If you have HC you won't have menstruation/excessive menstrual flow
-  Mens ~ An , # Anorexia can stop excessive menstrual flow
-  A ~ Mens , # menstruation/excessive menstrual flow can cause anemia
-  Pre ~ HC, # HC will block pregnancy
-  HC ~ Pre, # Pregnancy can affect your use/choise of HC
-  HC ~ Cb , # Cb can affect your use/choise of HC
-  Cb ~ Pre, #Pregnancy can cause child birth
-  A ~ Cb, # Child birth can cause anemia
-  HC ~ M , #Migraine can effect choise of HC
-  A ~ MS  , # Obesity can cause IDA 
-  HC ~ MS, # 'The risk of ischemic stroke in patients using combined oral contraceptives is increased in patients with additional stroke risk factors, including smoking, hypertension, and migraine with aura'
-  HC ~ Ag, # Age can affect your choise of HC
-  Pre ~ Ag, # Age reduces your likely hood of getting pregnant
-  MS ~ O  , # Obesity causes metabolic syndrome
-  HC ~ Ac , # Acne can affect your choise of HC
-
-  A ~ C, # cancer can cause anemia
-  A ~ HC, # hormonal contraception can protect from anemia, but should this go only through the menstruation variable?
-  labels = c(
-    "A" = 'Anemia',
-    "HC" = 'Use/Choise of HC',
-    "Mens"= 'Ex. mens. flow' ,
-    "Pre" = 'Pregnancy' ,
-    "Cb" = 'Child birth' ,
-    "MS" = 'Metabolic syndrome' ,
-    "M" =  'Migraine',
-    "Ag" = 'Age' ,
-    "O"  = 'Obesity',
-    "Ac"  = 'Acne' ,
-    "An" = 'Anorexia',
-    "C" = 'Cancer'
-  ),
-  exposure = "HC",
-  outcome = "A"
-)
-
-ggdag::ggdag(anemia_dag, # the dag object we created
-             text = FALSE, # this means the original names won't be shown
-             use_labels = "label") #+ # instead use the new names
-```
-
-```{r}
-
-tidy_dagitty(anemia_dag)
-
-```
-
-### Plot with diagrammeR
-
-```{r}
-
-
-
-g <- from_ggdag_2_diagrammer(anemia_dag)
-
-
-```
-
-Can I then the DiagrammeR to plot the graph and extract co-ordinates from it to make the ggdag look better?
-
-
-```{r}
-render_graph(
-  g, 
-#  layout="tree"
-)
-```
-
-
-```{r}
-#grViz(g)
-```
-
-
-```{r}
-adag.tibble <- tidy_dagitty(anemia_dag)$data
-colnames(adag.tibble)
-```
-```{r}
-
-adag.tibble %>% select(name, direction, to) %>% summary()
-
-```
-
-
-
-```{r}
-ggdag_paths(anemia_dag)
-```
-
-```{r}
-ggdag_adjustment_set(anemia_dag)
-```
-
-
-Excessive menstrual flow will cause a loop that needs to be blocked. How?
-  -Exclude all persons with excessive menstrual flow diagnosis ?
-  -Similarly cancer could cause all kinds of loops so all persons with cancer diagnosis are best excluded
-  
-  
-
-```{r}
-
-anemia_01_dag <- ggdag::dagify(
-  #HC ~  Mens, # If you have excessive menstrual flow you are more likely to be recommended HC
-  #Mens ~ HC, # If you have HC you won't have excessive menstrual flow
-  Pre ~ HC, # HC will block pregnancy
-  HC ~ Pre, # Pregnancy can affect your use/choise of HC
-  HC ~ Cb , # Cb can affect your use/choise of HC
-  Cb ~ Pre, #Pregnancy can cause child birth
-  A ~ Cb, # Child birth can cause anemia
-  HC ~ M , #Migraine can effect choise of HC
-  A ~ MS  , # Obesity can cause IDA 
-  #A ~ Mens , # Excessive menstrual flow can cause anemia
-  HC ~ MS, # 'The risk of ischemic stroke in patients using combined oral contraceptives is increased in patients with additional stroke risk factors, including smoking, hypertension, and migraine with aura'
-  HC ~ Ag, # Age can affect your choise of HC
-  Pre ~ Ag, # Age reduces your likely hood of getting pregnant
-  MS ~ O  , # Obesity causes metabolic syndrome
-  HC ~ Ac , # Acne can affect your choise of HC
-#  Mens ~ An , # Anorexia can stop excessive menstrual flow
-#  A ~ C,
-  A ~ HC,
-  labels = c(
-    "A" = 'Anemia',
-    "HC" = 'Use/Choise of HC',
-    "Mens"= 'Ex. mens. flow' ,
-    "Pre" = 'Pregnancy' ,
-    "Cb" = 'Child birth' ,
-    "MS" = 'Metabolic syndrome' ,
-    "M" =  'Migraine',
-    "Ag" = 'Age' ,
-    "O"  = 'Obesity',
-    "Ac"  = 'Acne' ,
-    "An" = 'Anorexia',
-    "C" = 'Cancer'
-  ),
-  exposure = "HC",
-  outcome = "A"
-)
-
-ggdag::ggdag(anemia_dag, # the dag object we created
-             text = FALSE, # this means the original names won't be shown
-             use_labels = "label") #+ # instead use the new names
-```
-
-```{r}
-ggdag_paths(anemia_01_dag)
-```
-
-```{r}
-ggdag_adjustment_set(anemia_01_dag)
-```
-
-
-
-```{r}
-anemia_02_dag <- ggdag::dagify(
-  #HC ~  Mens, # If you have excessive menstrual flow you are more likely to be recommended HC
-  #Mens ~ HC, # If you have HC you won't have excessive menstrual flow
-  #Pre ~ HC, # HC will block pregnancy
-  #HC ~ Pre, # Pregnancy can affect your use/choise of HC
-  #HC ~ Cb , # Cb can affect your use/choise of HC
-  #Cb ~ Pre, #Pregnancy can cause child birth
-  #A ~ Cb, # Child birth can cause anemia
-  HC ~ M , #Migraine can effect choise of HC
-  A ~ MS  , # Obesity can cause IDA 
-  #A ~ Mens , # Excessive menstrual flow can cause anemia
-  HC ~ MS, # 'The risk of ischemic stroke in patients using combined oral contraceptives is increased in patients with additional stroke risk factors, including smoking, hypertension, and migraine with aura'
-  HC ~ Ag, # Age can affect your choise of HC
-  #Pre ~ Ag, # Age reduces your likely hood of getting pregnant
-  MS ~ O  , # Obesity causes metabolic syndrome
-  HC ~ Ac , # Acne can affect your choise of HC
-#  Mens ~ An , # Anorexia can stop excessive menstrual flow
-#  A ~ C,
-  A ~ HC,
-  labels = c(
-    "A" = 'Anemia',
-    "HC" = 'Use/Choise of HC',
-    "Mens"= 'Ex. mens. flow' ,
-    "Pre" = 'Pregnancy' ,
-    "Cb" = 'Child birth' ,
-    "MS" = 'Metabolic syndrome' ,
-    "M" =  'Migraine',
-    "Ag" = 'Age' ,
-    "O"  = 'Obesity',
-    "Ac"  = 'Acne' ,
-    "An" = 'Anorexia',
-    "C" = 'Cancer'
-  ),
-  exposure = "HC",
-  outcome = "A"
-)
-
-ggdag::ggdag(anemia_02_dag, # the dag object we created
-             text = FALSE, # this means the original names won't be shown
-             use_labels = "label") #+ # instead use the new names
-```
-
-```{r}
-ggdag_paths(anemia_02_dag)
-```
-
-```{r}
-ggdag_adjustment_set(anemia_02_dag)
-```
-
-
-
-Hence, the model would be:
-
-A ~  hormonal_contraception + metabolic_syndrome
-
-But what do we do with age? Based on FinDonor it could be considered causal for anemia. Based on PBAC it could be a proxy to menstruation. It needs to be accounted for? Do we just make models with and without it as it also influences choise of HC ? Or can we consider some age group where choise of HC would not be impacted by age??? This needs experimentation on the DAG.
-
-Do we want to make an analysis plan and submit it before analysis!?
-
-
-## causaleffect experiments
-
-
-
-```{r}
-
-g <- from_ggdag_2_igraph(anemia_dag)
-l <- layout_with_sugiyama(g)
-# plot
-plot(g, layout=-l$layout[,2:1], edge.arrow.size = 0.4)
-```
-
-```{r}
-
-#ce1 <- causal.effect(y = "A", x = "HC", z = NULL, G = g, expr = TRUE)
-
-# Error in `causal.effect()`:
-# ! Graph 'G' is not a DAG
-# Backtrace:
-#  1. causaleffect::causal.effect(...)
-# Execution halted
-
-```
-
-```{r}
-
-g <- from_ggdag_2_igraph(anemia_02_dag)
-l <- layout_with_sugiyama(g)
-# plot
-plot(g, layout=-l$layout[,2:1], edge.arrow.size = 0.4)
-
-```
-
-```{r}
-
-ce1 <- causal.effect(y = "A", x = "HC", z = NULL, G = g, expr = TRUE)
-ce1
-```
-
-And what does that mean?
-
-
-Would this be better?
-
-1. create graph with https://rich-iannone.github.io/DiagrammeR/reference/create_graph.html
-
-2. display it with grViz?
-
-3. can graph from create graph be imported to ggdag
-
-https://rdrr.io/cran/DiagrammeR/man/from_igraph.html
-
-try to plot with Diagrammer the ggdag object
