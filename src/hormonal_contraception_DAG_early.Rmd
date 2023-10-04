@@ -435,3 +435,29 @@ Would this be better?
 https://rdrr.io/cran/DiagrammeR/man/from_igraph.html
 
 try to plot with Diagrammer the ggdag object
+
+
+```{r}
+#read finregistry list
+finnr<- read.table(
+  "../data/finnregistry_list.txt",
+  fill = TRUE,sep = "\t"
+  )
+
+cols <- c("diag","co_fi","co_fr","s_fr","gc","hits","chits")
+finnr$cols <- rep(cols,nrow(finnr) / length(cols))
+frt <- finnr %>% 
+  filter(cols == "diag" | cols == "s_fr") %>% 
+   filter(!V1 == "-") # %>%
+  # mutate(
+  #   cols = as.factor(cols),
+  #   V1 = as.character(V1)
+  # ) %>% 
+  # as_tibble()
+#pivot_wider(names_from =cols,values_from = V1) 
+frt  <- cbind(frt[seq(from=1,to=nrow(frt),by=2),1], frt[seq(from=2,to=nrow(frt),by=2),1]) %>% as_tibble()
+
+write.table(frt, file="../data/finnregistry_processed.txt",sep="\t")
+
+```
+
