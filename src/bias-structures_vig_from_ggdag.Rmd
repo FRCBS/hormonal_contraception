@@ -30,6 +30,7 @@ set.seed(2939)
 library(ggdag)
 library(ggplot2)
 theme_set(theme_dag())
+
 ```
 
 # Introduction
