@@ -330,38 +330,30 @@ Associations for iron deficiency anemia derived from FinnReg added. Some conditi
 
 ```{r}
 pastricha_dag_mens_no_fr <- ggdag::dagify(
-  II ~ VD, # Low haem iron content (eg, from a vegetarian or vegan diet)
-  II ~ ConInh, # Concomitant consumption of inhibitors of iron absorption (eg, calcium or tea)
-  II ~ InAcid, # Inadequate acidification
-  II ~ InMyc, # Intestinal mycosal dysfunction
-  IS ~ II, #When iron intake is inadequate to meet requirements or to compensate for physiological or pathological losses, body iron stores become depleted
+  #IS ~ II, #When iron intake is inadequate to meet requirements or to compensate for physiological or pathological losses, body iron stores become depleted
   A ~ Iinfl, #In patients with inflammation, withholding of iron from the plasma promotes iron deficient erythropoiesis and anaemia despite adequate body iron stores (functional iron deficiency). Obesity
-  A ~ IS, # Absolute ID occurs when iron stores are insufficient to meet the needs of the individual, and is particularly common in young children (younger than 5 years) and premenopausal (especially pregnant) women
-  IS ~ Mens,  # The main causes of absolute ID are excessive blood loss...
+  #A ~ IS, # Absolute ID occurs when iron stores are insufficient to meet the needs of the individual, and is particularly common in young children (younger than 5 years) and premenopausal (especially pregnant) women
+  A ~ Mens,  # The main causes of absolute ID are excessive blood loss...
   Mens ~ HC,
-  IS ~ InLoss,  # Gastrointestinal blood loss is the most important cause of ID in men and postmenopausal women
+  A ~ InLoss,  # Gastrointestinal blood loss is the most important cause of ID in men and postmenopausal women
   InLoss ~ IBD, # IBD causes GI blood loss
   Iinfl ~ IBD, # IBD causes inflammation
-  Iinfl ~ RA, # rheumatoid arthritis causes inflammation
   Iinfl ~ asthma, 
-  InMyc ~ IBD, # IBD causes intestinal dysfunction (through inflammation?)
-  InMyc ~ GBP, # gastric bypass, particularly Roux-en-Y, causes food to bypass duodenum.  
-  IS ~ BD, # Blood donation can cause iron deficiency
-  BD ~ IS, # If you are low own iron you can't get to donate 
-  IS ~ Cb, # childbirth affects iron stores
-  IS ~ MC, 
+  A ~ BD, # Blood donation can cause iron deficiency
+  A ~ Cb, # childbirth affects iron stores
+  A ~ MC, # miscarriage affects iron stores
+  A ~ Ab, # abortion affects iron stores
+  A ~ ED, # eating disorders addect iron stores
   Cb ~ Pre, 
   Ab ~ Pre, 
   MC ~ Pre, 
   Pre ~ HC, 
-  Mens ~ IS, # Your iron store can influence your menstruation
+  #Mens ~ IS, # Your iron store can influence your menstruation
   Mens ~ HMB, # heavy menstrual bleeding
   Mens ~ ED, # eating disorders effect on HPO axis
-  II ~ ED, 
   Mens ~ hypth, # hypothyroidism effect on HPO axis
   HMB ~ PALM, # structural causes for HMB
   HMB ~ COEIN, # non-structural causes for HMB
-  HC ~ Iinfl, # obesity and mentabolic disease can influence your choise of HC
   HC ~ Age, # age affect your choice of contraception, should there HC X age interaction
   HC ~ Contr, # contraindication for HC use
   HC ~ Tera, # teratogens (tretinoin, lithium)
@@ -373,11 +365,11 @@ pastricha_dag_mens_no_fr <- ggdag::dagify(
   Contr ~ AE, # arterial thrombosis (-> exclude stroke, TIA, ACS)
   Contr ~ Migr, # aural migraine
   Contr ~ DI, # drug interactions (antiepileptics)
-  Iinfl ~ Age, # the older you are the more inflamed you get, "spline"?
   Iinfl ~ MBO, # metabolisc syndrome
   Iinfl ~ Smoking, 
   RR ~ Smoking,
-  MBO ~ RR, 
+  VE ~ Smoking,
+  AE ~ Smoking,
   MBO ~ Ob, # obesity risk factor for MBO
   HMB ~ Ob, # obesity risk factor for HMB
   Iinfl ~ Ca, # low grade inflammation -> cancer
@@ -389,8 +381,8 @@ pastricha_dag_mens_no_fr <- ggdag::dagify(
     "HC" = 'Use/Choise\nof HC',
     "Contr" = 'Contraindication\n for HC use',
     "RR" = 'Hypertension',
-    "AE" = 'Arterial/\nthrombosis',
-    "VE" = 'Venous/\nthrombosis',
+    "AE" = 'Arterial\nthrombosis',
+    "VE" = 'Venous\nthrombosis',
     "Migr" = 'Aural\nmigraine',
     "DI" = 'Drug\ninteractions',
     "Tera" = 'Teratogens',
@@ -408,7 +400,6 @@ pastricha_dag_mens_no_fr <- ggdag::dagify(
     "GBP" = 'Gastric\nbypass',
     "Smoking" = 'Smoking',
     "asthma" = 'Asthma',
-    "RA" = 'Rheumatoid\narthritis',
     # "" = '',
     "Mens"= 'Menstruation' ,
     "Pre" = 'Pregnancy' ,
@@ -417,7 +408,6 @@ pastricha_dag_mens_no_fr <- ggdag::dagify(
     "IS" = 'Iron\nstores',
    "Iinfl" = 'Inflammation',
    "InLoss" = 'Gastrointestinal\nblood loss',
-   "Erosion" = "Erosion",
    "CC" = 'Colon cancer',
    "InflBo" = 'Inflamatory bowel disease',
    "BD" = 'Blood\ndonation',
@@ -440,9 +430,10 @@ render_graph(
 )
 ```
 
+Inflammation increases risk of anemia but is not an observable variable in our study. However, as many factors involved in the DAG cause inflammation it cannot be a latent variable and needs to be adjusted for. To  
 
 ```{r}
-latents(pastricha_dag_mens_no_fr) <- c("II","IS")
+latents(pastricha_dag_mens_no_fr) <- c("Mens", "Smoking", "BD", "Pre", "DI") 
 exposures(pastricha_dag_mens_no_fr) <- c("HC")
 outcomes(pastricha_dag_mens_no_fr) <- c("A")
 
@@ -452,10 +443,102 @@ outcomes(pastricha_dag_mens_no_fr) <- c("A")
 ```{r}
 ggdag_adjustment_set(pastricha_dag_mens_no_fr)
 ```
+Inflammation increases risk of anemia but is not an observable variable in our study. Instead, we will adjust for factors that cause inflammation.  
 
 
 ```{r}
 ggdag_instrumental(pastricha_dag_mens_no_fr)
 ```
+
+# Dagitty
+
+```{r}
+library(dagitty)
+
+g <- dagitty('dag {
+bb="-5.138,-7.891,4.859,6.577"
+"Contraindications of HC" [pos="3.753,-2.147"]
+"Education level" [pos="-1.893,-2.436"]
+"HC use and type" [exposure,pos="0.468,-2.881"]
+"Heavy menstrual bleeding (PALM-COEIN)" [pos="-1.613,-1.085"]
+"Iron intake" [latent,pos="-3.967,-1.649"]
+"Metabolic syndrome" [pos="-0.494,3.132"]
+"Place of residence" [pos="0.099,-6.685"]
+"Relationship status" [pos="3.402,-5.250"]
+Abortion [pos="-3.973,2.750"]
+Age [pos="2.933,-0.209"]
+Cancer [pos="3.586,2.317"]
+Childbirth [pos="-2.588,4.014"]
+Hypothyroidism [pos="-4.305,0.375"]
+IBD [pos="0.758,5.372"]
+IDA [outcome,pos="-0.344,1.038"]
+Income [pos="-1.318,-5.170"]
+Inflammation [latent,pos="2.083,2.791"]
+Miscarriage [latent,pos="0.191,3.885"]
+Obesity [latent,pos="1.496,0.268"]
+Pregnancy [pos="-1.984,0.769"]
+Smoking [latent,pos="4.026,0.666"]
+"Contraindications of HC" -> "HC use and type"
+"Education level" -> "HC use and type"
+"Education level" -> "Iron intake"
+"Education level" -> Income
+"Education level" -> Pregnancy
+"HC use and type" -> "Heavy menstrual bleeding (PALM-COEIN)"
+"HC use and type" -> IDA
+"HC use and type" -> Pregnancy
+"Heavy menstrual bleeding (PALM-COEIN)" -> IDA
+"Iron intake" -> IDA
+"Metabolic syndrome" -> Inflammation
+"Place of residence" -> "HC use and type"
+"Relationship status" -> "HC use and type"
+Abortion -> IDA
+Age -> "Contraindications of HC"
+Age -> IDA
+Age <-> Inflammation
+Cancer -> IDA
+Childbirth -> IDA
+Hypothyroidism -> "Heavy menstrual bleeding (PALM-COEIN)"
+Hypothyroidism -> IDA
+IBD -> IDA
+IBD -> Inflammation
+Income -> "HC use and type"
+Income -> "Place of residence"
+Inflammation -> Cancer
+Inflammation -> IDA
+Miscarriage -> IDA
+Obesity -> "Contraindications of HC"
+Obesity -> "Heavy menstrual bleeding (PALM-COEIN)"
+Obesity -> "Metabolic syndrome"
+Obesity -> Cancer
+Obesity -> Inflammation
+Pregnancy -> Abortion
+Pregnancy -> Childbirth
+Pregnancy -> IDA
+Pregnancy -> Miscarriage
+Smoking -> "Contraindications of HC"
+Smoking -> IDA
+Smoking -> Inflammation
+}')
+plot(g)
+```
+
+```{r}
+# all paths between HC and IDA
+paths(g, "HC use and type", "IDA")
+```
+```{r}
+impliedConditionalIndependencies(g)
+```
+## Minimal adjustment set
+
+```{r}
+# Minimal adjustment set
+print("The minimal adjustment set")
+adjustmentSets(g,"HC use and type","IDA")
+
+```
+
+At a minimum, HC contraindications and education level needs to be adjusted for to close biasing paths
+
 
 
