@@ -324,7 +324,7 @@ ggdag_adjustment_set(pastricha_dag_mens_no)
 ggdag_instrumental(pastricha_dag_mens_no)
 ```
 
-# Pastricha DAG with added complexity and exclusions + FinnReg & complexity
+# FINAL DAG: Pastricha DAG with added complexity and exclusions + FinnReg & complexity
 
 Associations for iron deficiency anemia derived from FinnReg added. Some conditions associated with iron deficiency are uncommon in this age group, and have therefore not been included.
 
