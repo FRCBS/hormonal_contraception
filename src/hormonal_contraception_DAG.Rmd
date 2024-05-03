@@ -170,12 +170,19 @@ ggdag_instrumental(pastricha_dag)
 
 ```{r}
 
-pastricha_dag_mens_no <- ggdag::dagify(
+pastricha_dag_mens <- ggdag::dagify(
   II ~ VD, # Low haem iron content (eg, from a vegetarian or vegan diet)
   II ~ ConInh, # Concomitant consumption of inhibitors of iron absorption (eg, calcium or tea)
   II ~ InAcid, # Inadequate acidification
   II ~ InMyc, # Intestinal mycosal dysfunction
+  II ~ Edu, # education level is associated with iron intake
+  Inc ~ Edu, # education level is associated with income
+  Res ~ Inc, # place of residence is associated with income level
   IS ~ II, #When iron intake is inadequate to meet requirements or to compensate for physiological or pathological losses, body iron stores become depleted
+  IS ~ IID, # increased iron demand can cause body iron stores to be depleted, if iron intake is inadequate
+  IID ~ Exe, # exercise causes iron demand
+  IID ~ Lac, # lactation increases iron demand
+  IID ~ Pre, # pregnancy increases iron demand
   A ~ Iinfl, #In patients with inflammation, withholding of iron from the plasma promotes iron deficient erythropoiesis and anaemia despite adequate body iron stores (functional iron deficiency). Obesity
   A ~ IS, # Absolute ID occurs when iron stores are insufficient to meet the needs of the individual, and is particularly common in young children (younger than 5 years) and premenopausal (especially pregnant) women
   IS ~ Mens,  # The main causes of absolute ID are excessive blood loss...
@@ -187,6 +194,8 @@ pastricha_dag_mens_no <- ggdag::dagify(
   Iinfl ~ asthma, 
   InMyc ~ IBD, # IBD causes intestinal dysfunction (through inflammation?)
   InMyc ~ GBP, # gastric bypass, particularly Roux-en-Y, causes food to bypass duodenum.  
+  InMyc ~ CD, # celiac disease
+  InMyc ~ HP, # H. Pylori
   IS ~ BD, # Blood donation can cause iron deficiency
   BD ~ IS, # If you are low own iron you can't get to donate 
   IS ~ Cb, # childbirth affects iron stores
@@ -196,6 +205,7 @@ pastricha_dag_mens_no <- ggdag::dagify(
   Ab ~ Pre, 
   MC ~ Pre, 
   Pre ~ HC, 
+  Pre ~ Edu, # education level is associated with (age of first) pregnancy
   Mens ~ IS, # Your iron store can influence your menstruation
   Mens ~ HMB, # heavy menstrual bleeding
   Mens ~ ED, # eating disorders effect on HPO axis
@@ -205,6 +215,8 @@ pastricha_dag_mens_no <- ggdag::dagify(
   HMB ~ COEIN, # non-structural causes for HMB
   HC ~ Iinfl, # obesity and mentabolic disease can influence your choise of HC
   HC ~ Age, # age affect your choice of contraception, should there HC X age interaction
+  HC ~ Edu, # education level affects the choice of HC
+  HC ~ Res, # some regions may offer free HC for certain age groups
   HC ~ Contr, # contraindication for HC use
   HC ~ Tera, # teratogens (tretinoin, lithium)
   HC ~ HMB, 
@@ -224,13 +236,14 @@ pastricha_dag_mens_no <- ggdag::dagify(
   MBO ~ RR, 
   MBO ~ Ob, # obesity risk factor for MBO
   HMB ~ Ob, # obesity risk factor for HMB
-  Iinfl ~ Ca, # low grade inflammation -> cancer
+  Ca ~ Iinfl, # low grade inflammation -> cancer
   A ~ Ca, # cancer causes anemia
   A ~ Age, # due to iron requirements of growth younger women tend to be more iron deficient aas they have not yet requperated from growth. Should this be a "spline" ? 
  
   labels = c(
     "A" = 'Iron\ndeficiency\nanemia',
-    "HC" = 'Use/Choise\nof HC',
+    "IID" = 'Increased\niron\ndemand',
+    "HC" = 'HC use\nand type',
     "Contr" = 'Contraindication\n for HC use',
     "RR" = 'Hypertension',
     "AE" = 'Arterial\nthrombosis',
@@ -253,15 +266,20 @@ pastricha_dag_mens_no <- ggdag::dagify(
     "Smoking" = 'Smoking',
     "asthma" = 'Asthma',
     "RA" = 'Rheumatoid\narthritis',
-    # "" = '',
+    "Exe" = 'Exercise',
+    "Lac" = 'Lactation',
     "Mens"= 'Menstruation' ,
     "Pre" = 'Pregnancy' ,
     "Cb" = 'Child\nbirth' ,
     "II" = 'Iron\nintake',
+    "Inc" = 'Income',
+    "Edu" = 'Education\nlevel',
+    "Res" = 'Place of\nresidence',
     "IS" = 'Iron\nstores',
    "Iinfl" = 'Inflammation',
    "InLoss" = 'Gastrointestinal\nblood loss',
-   "Erosion" = "Erosion",
+    "CD" = 'Celiac\ndisease',
+    "HP" = 'H. Pylori',
    "CC" = 'Colon cancer',
    "InflBo" = 'Inflamatory bowel disease',
    "BD" = 'Blood\ndonation',
@@ -279,14 +297,17 @@ pastricha_dag_mens_no <- ggdag::dagify(
 
 # tried to change node colours herem but this does not work? I wanted factors directly related to IDA to be a separate colour 
 # pastricha_dag <- pastricha_dag %>% 
-#   set_node_attrs(node = "II", fillcolor = "pink")
+#    set_node_attrs(node = c("Age"), color = "pink")
 
-pastricha_dag.diag <- from_ggdag_2_diagrammer(pastricha_dag_mens_no)
+
+pastricha_dag.diag <- from_ggdag_2_diagrammer(pastricha_dag_mens)
 render_graph(
   pastricha_dag.diag, 
 #  layout="tree"
 )
 ```
+
+
 
 
 ```{r}
