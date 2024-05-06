@@ -220,6 +220,7 @@ pastricha_dag_mens <- ggdag::dagify(
   Mens ~ ED, # eating disorders effect on HPO axis
   II ~ ED, 
   Mens ~ hypth, # hypothyroidism effect on HPO axis
+  A ~ hypth, 
   HMB ~ PALM, # structural causes for HMB
   HMB ~ COEIN, # non-structural causes for HMB
   HC ~ Iinfl, # obesity and mentabolic disease can influence your choise of HC
