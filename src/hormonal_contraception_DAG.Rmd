@@ -165,8 +165,9 @@ ggdag_adjustment_set(pastricha_dag)
 ggdag_instrumental(pastricha_dag)
 ```
 
-# Pastricha DAG with added complexity
+# Mindmap of factors related to iron deficiency anemia
 
+Here we draw a mindmap with the intent of visualizing factors related to iron deficiency anemia in Finnish premenopausal women. Although the the mindmap is drawn using the same code for drawing the final DAG, it does not fulfill the criteria for DAGs (for example, this one includes loops) and should not be used for analysis. 
 
 ```{r}
 
