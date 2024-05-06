@@ -184,7 +184,7 @@ pastricha_dag_mens <- ggdag::dagify(
   II ~ ConInh, # Concomitant consumption of inhibitors of iron absorption (eg, calcium or tea)
   II ~ InAcid, # Inadequate acidification
   II ~ InMyc, # Intestinal mycosal dysfunction
-  II ~ Edu, # education level is associated with iron intake
+  VD ~ Edu, # education level is associated with diet, such as vegan diet low in heam iron
   Inc ~ Edu, # education level is associated with income
   Res ~ Inc, # place of residence is associated with income level
   IS ~ II, #When iron intake is inadequate to meet requirements or to compensate for physiological or pathological losses, body iron stores become depleted
