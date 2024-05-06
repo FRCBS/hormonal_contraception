@@ -201,6 +201,7 @@ pastricha_dag_mens <- ggdag::dagify(
   Iinfl ~ IBD, # IBD causes inflammation
   Iinfl ~ RA, # rheumatoid arthritis causes inflammation
   Iinfl ~ asthma, 
+  Iinfl ~ Ob,
   InMyc ~ IBD, # IBD causes intestinal dysfunction (through inflammation?)
   InMyc ~ GBP, # gastric bypass, particularly Roux-en-Y, causes food to bypass duodenum.  
   InMyc ~ CD, # celiac disease
@@ -216,20 +217,21 @@ pastricha_dag_mens <- ggdag::dagify(
   Pre ~ HC, 
   Pre ~ Edu, # education level is associated with (age of first) pregnancy
   Mens ~ IS, # Your iron store can influence your menstruation
-  Mens ~ HMB, # heavy menstrual bleeding
+  Mens ~ AUB, # heavy menstrual bleeding
   Mens ~ ED, # eating disorders effect on HPO axis
   II ~ ED, 
   Mens ~ hypth, # hypothyroidism effect on HPO axis
   A ~ hypth, 
-  HMB ~ PALM, # structural causes for HMB
-  HMB ~ COEIN, # non-structural causes for HMB
+  AUB ~ PALM, # structural causes for HMB
+  AUB ~ COEIN, # non-structural causes for HMB
   HC ~ Iinfl, # obesity and mentabolic disease can influence your choise of HC
   HC ~ Age, # age affect your choice of contraception, should there HC X age interaction
   HC ~ Edu, # education level affects the choice of HC
   HC ~ Res, # some regions may offer free HC for certain age groups
+  HC ~ RelSt, # relationship status associated with need for HC and type of it 
   HC ~ Contr, # contraindication for HC use
   HC ~ Tera, # teratogens (tretinoin, lithium)
-  HC ~ HMB, 
+  HC ~ AUB, 
   HC ~ Acne,
   HC ~ Smoking,
   VE ~ Smoking, # smoking risk factor for venous thorombosis
@@ -245,7 +247,7 @@ pastricha_dag_mens <- ggdag::dagify(
   RR ~ Smoking,
   MBO ~ RR, 
   MBO ~ Ob, # obesity risk factor for MBO
-  HMB ~ Ob, # obesity risk factor for HMB
+  AUB ~ Ob, # obesity risk factor for HMB
   Ca ~ Iinfl, # low grade inflammation -> cancer
   A ~ Ca, # cancer causes anemia
   A ~ Age, # due to iron requirements of growth younger women tend to be more iron deficient aas they have not yet requperated from growth. Should this be a "spline" ? 
@@ -285,6 +287,7 @@ pastricha_dag_mens <- ggdag::dagify(
     "Inc" = 'Income',
     "Edu" = 'Education\nlevel',
     "Res" = 'Place of\nresidence',
+    "RelSt" = 'Relationship\nstatus',
     "IS" = 'Iron\nstores',
    "Iinfl" = 'Inflammation',
    "InLoss" = 'Gastrointestinal\nblood loss',
@@ -298,7 +301,7 @@ pastricha_dag_mens <- ggdag::dagify(
    "InAcid" = 'Inadequate\nacidification',
    "VD" = 'Low\niron\ndiet',
    "Age" = 'Age',
-   "HMB" = 'HMB\nN92'
+   "AUB" = 'AUB'
    
   ),
   exposure = "HC",
