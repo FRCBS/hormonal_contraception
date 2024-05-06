@@ -167,7 +167,14 @@ ggdag_instrumental(pastricha_dag)
 
 # Mindmap of factors related to iron deficiency anemia
 
-Here we draw a mindmap with the intent of visualizing factors related to iron deficiency anemia in Finnish premenopausal women. Although the the mindmap is drawn using the same code for drawing the final DAG, it does not fulfill the criteria for DAGs (for example, this one includes loops) and should not be used for analysis. 
+Here we draw a mindmap with the intent of visualizing factors related to iron deficiency anemia (IDA) in Finnish premenopausal women. Although the the mindmap is drawn using the same code for drawing the final DAG, it does not fulfill the criteria for DAGs (for example, this one includes loops) and should not be used for analysis. 
+
+Sources:
+
+- IDA endpoint in FinRegistry (search term D3_ANAEMIA_IRONDEF), list of relationships between endpoints. Pathologies unlikely in premenopausal women or very uncommon not included in this mindmap. "In FinRegistry we include all the individuals that lived in Finland and were alive on the 1st of January 2010 as well as their parents, spouses, children, and siblings. The research data will be updated until 2025. You can explore disease endpoints at risteys.finregistry.fi."
+- Factors influencing contraception choice and use globally: a synthesis of systematic reviews by D’Souza et al. 2022 (https://doi.org/10.1080/13625187.2022.2096215)
+"We found 24 systematic reviews of mostly moderate or high quality. Factors affecting contraception use are remarkably similar among women in very different cultures and settings globally. Use of contraception is influenced by the perceived likelihood and appeal of pregnancy, and relationship status. It is influenced by women’s knowledge, beliefs, and perceptions of side effects and health risks. Male partners have a strong influence, as do peers’ views and experiences, and families’ expectations. Lack of education and poverty is linked with low contraception use, and social and cultural norms influence contraception and expectations of family size and timing. Contraception use also depends upon their availability, the accessibility, confidentiality and costs of health services, and attitudes, behaviour and skills of health practitioners."
+- Factors associated with iron deficiency and how they can be used in blood donor selection processes (Sofie Ekroos, Mikko Arvas, Johanna Castrén, https://doi.org/10.1101/2022.02.01.22270122)
 
 ```{r}
 
