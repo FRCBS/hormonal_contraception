@@ -190,6 +190,7 @@ pastricha_dag_mens <- ggdag::dagify(
   VD ~ Edu, # education level is associated with diet, such as vegan diet low in heam iron
   Inc ~ Edu, # education level is associated with income
   Res ~ Inc, # place of residence is associated with income level
+  HC ~ Inc, # income affects ability to purchase HC
   IS ~ II, #When iron intake is inadequate to meet requirements or to compensate for physiological or pathological losses, body iron stores become depleted
   IS ~ IID, # increased iron demand can cause body iron stores to be depleted, if iron intake is inadequate
   IID ~ Exe, # exercise causes iron demand
@@ -366,6 +367,7 @@ HC_DAG <- ggdag::dagify(
   II ~ Edu, # education level is associated with diet, such as vegan diet low in heam iron
   Inc ~ Edu, # education level is associated with income
   Res ~ Inc, # place of residence is associated with income level
+  HC ~ Inc, # income affects ability to purchase HC
   IS ~ II, #When iron intake is inadequate to meet requirements or to compensate for physiological or pathological losses, body iron stores become depleted
   IS ~ IID, # increased iron demand can cause body iron stores to be depleted, if iron intake is inadequate
 #  IID ~ Exe, # exercise causes iron demand
