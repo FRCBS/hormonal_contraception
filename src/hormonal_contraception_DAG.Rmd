@@ -413,7 +413,7 @@ HC_DAG <- ggdag::dagify(
   HC ~ Contr, # contraindication for HC use
 #  HC ~ Tera, # teratogens (tretinoin, lithium)
   HC ~ Ca, # previous breast cancer contraindication for HC
-  HC ~ AUB, 
+  HC ~ AUB, # PALM-COEIN
 #  HC ~ Acne,
   HC ~ Smoking,
   AEVE ~ Smoking, # smoking risk factor for  thorombosis
@@ -503,7 +503,7 @@ HC_DAG <- ggdag::dagify(
 hc_dag.diag <- from_ggdag_2_diagrammer(HC_DAG)
 render_graph(
   hc_dag.diag, 
-#  layout="tree"
+  layout="nicely"
 )
 ```
 
