@@ -221,7 +221,7 @@ pastricha_dag_mens <- ggdag::dagify(
   Mens ~ AUB, # heavy menstrual bleeding
   Mens ~ ED, # eating disorders effect on HPO axis
   II ~ ED, 
-  Mens ~ hypth, # hypothyroidism effect on HPO axis
+  Mens ~ hypth, # hypothyroidism effect on HPO axis and cause heavy menstrual bleeding (reduces SHBG (sex hormone binding globulin), and the reduction leads to greater estrogen exposure which can cause HMB)
   A ~ hypth, 
   AUB ~ PALM, # structural causes for HMB
   AUB ~ COEIN, # non-structural causes for HMB
