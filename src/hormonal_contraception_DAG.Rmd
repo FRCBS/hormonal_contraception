@@ -404,7 +404,7 @@ HC_DAG <- ggdag::dagify(
   HC ~ Age, # age affect your choice of contraception, should there HC X age interaction (age >35 years relative contraindication for HC)
   HC ~ Edu, # education level affects the choice of HC
   HC ~ Res, # some regions may offer free HC for certain age groups
-  HC ~ RelSt, # relationship status associated with need for HC and type of it 
+#  HC ~ RelSt, # relationship status associated with need for HC and type of it 
   HC ~ Contr, # contraindication for HC use
 #  HC ~ Tera, # teratogens (tretinoin, lithium)
   HC ~ Ca, # previous breast cancer contraindication for HC
@@ -419,8 +419,8 @@ HC_DAG <- ggdag::dagify(
   AE ~ Ca, # cancer increases risk for arterial thrombosis
   VE ~ Ca, # cancer increases risk for venous thrombosis
   VE ~ A, #  IDA increases risk of venous thrombosis
-  Contr ~ Migr, # aural migraine
-  Contr ~ DI, # drug interactions (antiepileptics)
+#  Contr ~ Migr, # aural migraine
+#  Contr ~ DI, # drug interactions (antiepileptics)
   Iinfl ~ Age, # the older you are the more inflamed you get, "spline"?
   Iinfl ~ MBO, # metabolic syndrome, DM1, DM2
   Iinfl ~ Smoking, 
