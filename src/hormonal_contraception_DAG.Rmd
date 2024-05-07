@@ -248,6 +248,7 @@ pastricha_dag_mens <- ggdag::dagify(
   Iinfl ~ Age, # the older you are the more inflamed you get, "spline"?
   Iinfl ~ MBO, # metabolic syndrome, DM1, DM2
   Iinfl ~ Smoking, 
+  Iinfl ~ HC, # use of COC has been linked to higher CRP, on the other hand IUD users in Finland have lower inflammatory markers
   RR ~ Smoking,
   MBO ~ RR, 
   MBO ~ Ob, # obesity risk factor for MBO
@@ -331,14 +332,36 @@ Now that we have visualized the pathways between hormonal contraception and iron
 
 # Hormonal contraception and iron deficiency anemia DAG
 
+https://www.r-bloggers.com/2019/08/causal-inference-with-dags-in-r/: Directed cyclical graphs (DAGs) are a powerful tool to understand and deal with causal inference. The book “Causal inference in statistics: a primer” is a useful reference to start, authored from Pearl, Glymour, and Jewell. Directed cyclical graphs (DAGs) are a powerful tool to understand and deal with causal inference. Causal inference in statistics: a primer” is a good resource from. A DAG is a directed acyclic graph, a visual encoding of a joint distribution of a set of variables. In a DAG all the variables are depicted as vertices and connected by arrows or directed paths, sequences of arrows in which every arrow points to some direction. DAGs are acyclic because no directed path can form a closed loop.
+
+https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8821727/ (Tutorial on Directed Acyclic Graphs, Digitale et al.): To create a DAG one must specify: 
+1) the causal question of interest, thus necessitating inclusion of exposure/treatment and outcome of interest; 
+- causal question: does use of hormonal contraception protect against iron deficiency anemia on a population level?
+- exposure: hormonal contraception based on Anatomical Therapeutic Chemical (ATC) codes: G02B “contraceptives for topical use”, G03A “hormonal contraceptives for systemic use”, and G03HB “antiandrogens and oestrogens”. We exclude women who received a prescription with the ATC code “G03AD” (i.e., emergency contraception), as emergency contraception which is widely available without prescription in Finland. Grouping will be done in two ways: by HC substance group (none/COC containing ethinylestradiol/COC containing estradiol/progestin-only) and by ATC code.
+- outcome: diagnosis of iron deficiency anemia based on ICD- or ICPC codes.
+2) variables that might influence both exposure and outcome (or a mediator of interest) 
+3) discrepancies between the ideal measures of the variables and measurements actually available to researchers; 
+4) selection factors that influence which patients are represented in the study population; 
+5) potential causal relationships among these variables (depicted as arrows connecting variables). 
+6) Even if a variable was not measured in the available data (or cannot be measured in most practical settings), it should nonetheless be represented in the DAG. Because the list of potential unmeasured variables can be long, a common convention visually simplifies by representing all unmeasured variables with the same causal structure (i.e., the same arrows in and out) as a single node.
+
+Inflammation
+- Hormonal contraception has been associated with inflammation in previous studies: 
+1) https://doi.org/10.1210/clinem/dgaa186 (Kangasniemi et al. 2000 Estradiol Valerate in COC Has More Favorable Inflammatory Profile Than Synthetic Ethinyl Estradiol: A Randomized Trial). EV = estradiol valerate, DNG = dienigest, EE = ethinyl estradiol. EV+DNG and DNG only had a neutral effect on inflammation and lipids, while EE+DNG increased both hs-CRP and PTX-3 levels as well as triglycerides and HDL. Professor Terhi Piltonen commented that other factors such as smoking and obesity are likely to have a larger effect than use of HC.  
+2) Toffol et al. (https://doi.org/10.1016/j.ajog.2022.06.009) found that LNG-IUD users to have lower inflammatory markers compared to the controls
+
+Unobserved variables:
+- iron intake
+- chronic disease, adjust for having any special reimbursment Kela code like in Partonen et al. 2023, Sleep medicine?
+
 
 ```{r}
 
-pastricha_dag_mens <- ggdag::dagify(
-  II ~ VD, # Low haem iron content (eg, from a vegetarian or vegan diet)
-  II ~ ConInh, # Concomitant consumption of inhibitors of iron absorption (eg, calcium or tea)
-  II ~ InAcid, # Inadequate acidification
-  II ~ InMyc, # Intestinal mycosal dysfunction
+HC_DAG <- ggdag::dagify(
+  #II ~ VD, # Low haem iron content (eg, from a vegetarian or vegan diet)
+  #II ~ ConInh, # Concomitant consumption of inhibitors of iron absorption (eg, calcium or tea)
+  #II ~ InAcid, # Inadequate acidification
+  #II ~ InMyc, # Intestinal mycosal dysfunction
   VD ~ Edu, # education level is associated with diet, such as vegan diet low in heam iron
   Inc ~ Edu, # education level is associated with income
   Res ~ Inc, # place of residence is associated with income level
@@ -470,9 +493,9 @@ pastricha_dag_mens <- ggdag::dagify(
 
 
 
-pastricha_dag.diag <- from_ggdag_2_diagrammer(pastricha_dag_mens)
+hc_dag.diag <- from_ggdag_2_diagrammer(HC_DAG)
 render_graph(
-  pastricha_dag.diag, 
+  hc_dag.diag, 
 #  layout="tree"
 )
 ```
@@ -481,15 +504,15 @@ render_graph(
 
 
 ```{r}
-latents(pastricha_dag_mens) <- c("II","IS")
-exposures(pastricha_dag_mens) <- c("HC")
-outcomes(pastricha_dag_mens) <- c("A")
+latents(HC_DAG) <- c("II","IS")
+exposures(HC_DAG) <- c("HC")
+outcomes(HC_DAG) <- c("A")
 
 ```
 
 
 ```{r}
-ggdag_adjustment_set(pastricha_dag_mens)
+ggdag_adjustment_set(HC_DAG)
 #how to define the latent variables to get the corract adjustement set
 ```
 
