@@ -253,6 +253,7 @@ pastricha_dag_mens <- ggdag::dagify(
   Iinfl ~ Smoking, 
   Iinfl ~ HC, # use of COC has been linked to higher CRP, on the other hand IUD users in Finland have lower inflammatory markers
   RR ~ Smoking,
+  RR ~ Age,
   MBO ~ RR, 
   MBO ~ Ob, # obesity risk factor for MBO
   AUB ~ Ob, # obesity risk factor for HMB
@@ -428,6 +429,7 @@ HC_DAG <- ggdag::dagify(
   Iinfl ~ Smoking, 
   Iinfl ~ HC, # use of COC has been linked to higher CRP, on the other hand IUD users in Finland have lower inflammatory markers
   RR ~ Smoking,
+  RR ~ Age,
   MBO ~ RR, 
   MBO ~ Ob, # obesity risk factor for MBO
   AUB ~ Ob, # obesity risk factor for HMB
