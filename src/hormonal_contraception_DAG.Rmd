@@ -238,6 +238,8 @@ pastricha_dag_mens <- ggdag::dagify(
   HC ~ Smoking,
   VE ~ Smoking, # smoking risk factor for venous thorombosis
   AE ~ Smoking, # smoking risk factor for arterial thorombosis
+  AE ~ RR, # hypertension is a risk factor for thrombosis
+  VE ~ RR, # hypertension is a risk factor for thrombosis  
   Contr ~ RR, # uncontrolled hypertension (1yr exclusion after dx?)
   Contr ~ VE, #  venous thrombosis (-> exclude DVT, PE)
   Contr ~ AE, # arterial thrombosis (-> exclude stroke, TIA, ACS)
@@ -414,6 +416,7 @@ HC_DAG <- ggdag::dagify(
 #  HC ~ Acne,
   HC ~ Smoking,
   AEVE ~ Smoking, # smoking risk factor for  thorombosis
+  AEVE ~ RR, # hypertension is a risk factor for thrombosis and embolism
   Contr ~ RR, # uncontrolled hypertension (1yr exclusion after dx?)
   Contr ~ AEVE, # arterial thrombosis (-> exclude stroke, TIA, ACS, DVT, PE)
   AEVE ~ Ca, # cancer increases risk for thrombosis
