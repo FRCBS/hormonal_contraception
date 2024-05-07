@@ -346,6 +346,7 @@ https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8821727/ (Tutorial on Directed Acyc
 6) Even if a variable was not measured in the available data (or cannot be measured in most practical settings), it should nonetheless be represented in the DAG. Because the list of potential unmeasured variables can be long, a common convention visually simplifies by representing all unmeasured variables with the same causal structure (i.e., the same arrows in and out) as a single node.
 
 Inflammation
+- Possible mechanism though the risk of thromosis: the thrombosis risk of HC related to estrogens effect on the liver, which in turn leads to inflammation and procoagulation (also an effect on the lipid profile, but this effect has been considered minor compared to the other two). The clinical relevance of this higher inflammation is unclear, but as inflammation is linked to iron deficiency anemia we need to consider the it when investigating the causal link of HC and IDA. 
 - Hormonal contraception has been associated with inflammation in previous studies: 
 1) https://doi.org/10.1210/clinem/dgaa186 (Kangasniemi et al. 2000 Estradiol Valerate in COC Has More Favorable Inflammatory Profile Than Synthetic Ethinyl Estradiol: A Randomized Trial). EV = estradiol valerate, DNG = dienigest, EE = ethinyl estradiol. EV+DNG and DNG only had a neutral effect on inflammation and lipids, while EE+DNG increased both hs-CRP and PTX-3 levels as well as triglycerides and HDL. Professor Terhi Piltonen commented that other factors such as smoking and obesity are likely to have a larger effect than use of HC.  
 2) Toffol et al. (https://doi.org/10.1016/j.ajog.2022.06.009) found that LNG-IUD users to have lower inflammatory markers compared to the controls
@@ -358,17 +359,17 @@ Unobserved variables:
 ```{r}
 
 HC_DAG <- ggdag::dagify(
-  #II ~ VD, # Low haem iron content (eg, from a vegetarian or vegan diet)
-  #II ~ ConInh, # Concomitant consumption of inhibitors of iron absorption (eg, calcium or tea)
-  #II ~ InAcid, # Inadequate acidification
-  #II ~ InMyc, # Intestinal mycosal dysfunction
-  VD ~ Edu, # education level is associated with diet, such as vegan diet low in heam iron
+#  II ~ VD, # Low haem iron content (eg, from a vegetarian or vegan diet)
+#  II ~ ConInh, # Concomitant consumption of inhibitors of iron absorption (eg, calcium or tea)
+#  II ~ InAcid, # Inadequate acidification
+#  II ~ InMyc, # Intestinal mycosal dysfunction
+  II ~ Edu, # education level is associated with diet, such as vegan diet low in heam iron
   Inc ~ Edu, # education level is associated with income
   Res ~ Inc, # place of residence is associated with income level
   IS ~ II, #When iron intake is inadequate to meet requirements or to compensate for physiological or pathological losses, body iron stores become depleted
   IS ~ IID, # increased iron demand can cause body iron stores to be depleted, if iron intake is inadequate
-  IID ~ Exe, # exercise causes iron demand
-  IID ~ Lac, # lactation increases iron demand
+#  IID ~ Exe, # exercise causes iron demand
+#  IID ~ Lac, # lactation increases iron demand
   IID ~ Pre, # pregnancy increases iron demand
   A ~ Iinfl, #In patients with inflammation, withholding of iron from the plasma promotes iron deficient erythropoiesis and anaemia despite adequate body iron stores (functional iron deficiency). Obesity
   A ~ IS, # Absolute ID occurs when iron stores are insufficient to meet the needs of the individual, and is particularly common in young children (younger than 5 years) and premenopausal (especially pregnant) women
@@ -378,10 +379,10 @@ HC_DAG <- ggdag::dagify(
   InLoss ~ IBD, # IBD causes GI blood loss
   Iinfl ~ IBD, # IBD causes inflammation
   Iinfl ~ Ob,
-  InMyc ~ IBD, # IBD causes intestinal dysfunction (through inflammation?)
-  InMyc ~ GBP, # gastric bypass, particularly Roux-en-Y, causes food to bypass duodenum.  
-  InMyc ~ CD, # celiac disease
-  InMyc ~ HP, # H. Pylori
+#  InMyc ~ IBD, # IBD causes intestinal dysfunction (through inflammation?)
+#  InMyc ~ GBP, # gastric bypass, particularly Roux-en-Y, causes food to bypass duodenum.  
+#  InMyc ~ CD, # celiac disease
+#  InMyc ~ HP, # H. Pylori
   IS ~ BD, # Blood donation can cause iron deficiency
   BD ~ IS, # If you are low own iron you can't get to donate 
   IS ~ Cb, # childbirth affects iron stores
@@ -392,23 +393,23 @@ HC_DAG <- ggdag::dagify(
   MC ~ Pre, 
   Pre ~ HC, 
   Pre ~ Edu, # education level is associated with (age of first) pregnancy
-  Mens ~ IS, # Your iron store can influence your menstruation
+#  Mens ~ IS, # Your iron store can influence your menstruation
   Mens ~ AUB, # heavy menstrual bleeding
   Mens ~ ED, # eating disorders effect on HPO axis
   II ~ ED, 
   Mens ~ hypth, # hypothyroidism effect on HPO axis and cause heavy menstrual bleeding (reduces SHBG (sex hormone binding globulin), and the reduction leads to greater estrogen exposure which can cause HMB)
   A ~ hypth, 
-  AUB ~ PALM, # structural causes for HMB
-  AUB ~ COEIN, # non-structural causes for HMB
+#  AUB ~ PALM, # structural causes for HMB
+#  AUB ~ COEIN, # non-structural causes for HMB
   HC ~ Age, # age affect your choice of contraception, should there HC X age interaction (age >35 years relative contraindication for HC)
   HC ~ Edu, # education level affects the choice of HC
   HC ~ Res, # some regions may offer free HC for certain age groups
   HC ~ RelSt, # relationship status associated with need for HC and type of it 
   HC ~ Contr, # contraindication for HC use
-  HC ~ Tera, # teratogens (tretinoin, lithium)
+#  HC ~ Tera, # teratogens (tretinoin, lithium)
   HC ~ Ca, # previous breast cancer contraindication for HC
   HC ~ AUB, 
-  HC ~ Acne,
+#  HC ~ Acne,
   HC ~ Smoking,
   VE ~ Smoking, # smoking risk factor for venous thorombosis
   AE ~ Smoking, # smoking risk factor for arterial thorombosis
@@ -423,6 +424,7 @@ HC_DAG <- ggdag::dagify(
   Iinfl ~ Age, # the older you are the more inflamed you get, "spline"?
   Iinfl ~ MBO, # metabolic syndrome, DM1, DM2
   Iinfl ~ Smoking, 
+  Iinfl ~ HC, # use of COC has been linked to higher CRP, on the other hand IUD users in Finland have lower inflammatory markers
   RR ~ Smoking,
   MBO ~ RR, 
   MBO ~ Ob, # obesity risk factor for MBO
