@@ -503,7 +503,7 @@ HC_DAG <- ggdag::dagify(
 hc_dag.diag <- from_ggdag_2_diagrammer(HC_DAG)
 render_graph(
   hc_dag.diag, 
-  layout="nicely"
+#  layout="tree"
 )
 ```
 
@@ -511,12 +511,13 @@ render_graph(
 
 
 ```{r}
-latents(HC_DAG) <- c("II","IS")
+latents(HC_DAG) <- c("II","IS", "IID", "Mens", "Pre", "Iinfl", "InLoss")
 exposures(HC_DAG) <- c("HC")
 outcomes(HC_DAG) <- c("A")
 
 ```
 
+Latent variables are not directly measured or observed in the data set (hidden or unobservable). They are used to represent underlying constructs or concepts that cannot be directly quantified, but might influence influence observed variables. Unobserved variables are those for which we lack measurements in the data set- They can be either latent or directly observable, we just lack the ability to measure them. In other words, latent variables represent underlying constructs we can't quantify, while unobserved variables can't be captured due to practical limitations. 
 
 ```{r}
 ggdag_adjustment_set(HC_DAG)
