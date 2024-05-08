@@ -198,6 +198,7 @@ pastricha_dag_mens <- ggdag::dagify(
   IID ~ Pre, # pregnancy increases iron demand
   A ~ Iinfl, #In patients with inflammation, withholding of iron from the plasma promotes iron deficient erythropoiesis and anaemia despite adequate body iron stores (functional iron deficiency). Obesity
   A ~ IS, # Absolute ID occurs when iron stores are insufficient to meet the needs of the individual, and is particularly common in young children (younger than 5 years) and premenopausal (especially pregnant) women
+  A ~ HC, # our exposure to outcome question, HC influences IDA not only through decreased menstrual blood loss, but also though effect on hepcidin (estrogen pos associated, progesterone neg association), parhaps also other mechanisms?
   IS ~ Mens,  # The main causes of absolute ID are excessive blood loss...
   Mens ~ HC,
   IS ~ InLoss,  # Gastrointestinal blood loss is the most important cause of ID in men and postmenopausal women
@@ -378,6 +379,7 @@ HC_DAG <- ggdag::dagify(
   IID ~ Pre, # pregnancy increases iron demand
   A ~ Iinfl, #In patients with inflammation, withholding of iron from the plasma promotes iron deficient erythropoiesis and anaemia despite adequate body iron stores (functional iron deficiency). Obesity
   A ~ IS, # Absolute ID occurs when iron stores are insufficient to meet the needs of the individual, and is particularly common in young children (younger than 5 years) and premenopausal (especially pregnant) women
+  A ~ HC, # our exposure to outcome question, HC influences IDA not only through decreased menstrual blood loss, but also though effect on hepcidin (estrogen pos associated, progesterone neg association), parhaps also other mechanisms?
   IS ~ Mens,  # The main causes of absolute ID are excessive blood loss...
   Mens ~ HC,
   IS ~ InLoss,  # Gastrointestinal blood loss is the most important cause of ID in men and postmenopausal women
