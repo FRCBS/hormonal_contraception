@@ -7,6 +7,8 @@ output:
   pdf_document: default
 ---
 
+VERSION 1
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(DiagrammeR)
@@ -360,9 +362,11 @@ Unobserved variables:
 - iron intake
 - chronic disease, adjust for having any special reimbursment Kela code like in Partonen et al. 2023, Sleep medicine?
 
+We need to draw two separate DAGs: one with all pathways visualized, and one for calculating the adjustment sets
+
+## HC and IDA DAG: pathways
 
 ```{r}
-
 HC_DAG <- ggdag::dagify(
 #  II ~ VD, # Low haem iron content (eg, from a vegetarian or vegan diet)
 #  II ~ ConInh, # Concomitant consumption of inhibitors of iron absorption (eg, calcium or tea)
@@ -509,199 +513,101 @@ render_graph(
 )
 ```
 
+## HC and IDA DAG: adjustment set
 
-
-
-```{r}
-latents(HC_DAG) <- c("II","IS", "IID", "Mens", "Pre", "Iinfl", "InLoss")
-exposures(HC_DAG) <- c("HC")
-outcomes(HC_DAG) <- c("A")
-
-```
-
-Latent variables are not directly measured or observed in the data set (hidden or unobservable). They are used to represent underlying constructs or concepts that cannot be directly quantified, but might influence influence observed variables. Unobserved variables are those for which we lack measurements in the data set- They can be either latent or directly observable, we just lack the ability to measure them. In other words, latent variables represent underlying constructs we can't quantify, while unobserved variables can't be captured due to practical limitations. 
-
-```{r}
-ggdag_adjustment_set(HC_DAG)
-#how to define the latent variables to get the corract adjustement set
-```
-
-
-```{r}
-ggdag_instrumental(pastricha_dag_mens)
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Pastricha DAG with added complexity and exclusions
+Finally, we create the minimal DAG to calculate adjustment sets. 
 
 Child birth and pregnancy create backdoor paths. Exclude all data prior to first pregnancy.
 Use of hormonal contraception to treat excessive menstrual flow. Exclude persons with excessive menstrual flow.
 Similarly cancer could cause all kinds of loops so all persons with cancer diagnosis are best excluded.
 
 ```{r}
-pastricha_dag_mens_no <- ggdag::dagify(
-  II ~ VD, # Low haem iron content (eg, from a vegetarian or vegan diet)
-  II ~ ConInh, # Concomitant consumption of inhibitors of iron absorption (eg, calcium or tea)
-  II ~ InAcid, # Inadequate acidification
-  II ~ InMyc, # Intestinal mycosal dysfunction
-  IS ~ II, #When iron intake is inadequate to meet requirements or to compensate for physiological or pathological losses, body iron stores become depleted
+HC_DAG_fin <- ggdag::dagify(
+#  II ~ VD, # Low haem iron content (eg, from a vegetarian or vegan diet)
+#  II ~ ConInh, # Concomitant consumption of inhibitors of iron absorption (eg, calcium or tea)
+#  II ~ InAcid, # Inadequate acidification
+#  II ~ InMyc, # Intestinal mycosal dysfunction
+  II ~ Edu, # education level is associated with diet, such as vegan diet low in heam iron
+  Inc ~ Edu, # education level is associated with income
+  Res ~ Inc, # place of residence is associated with income level
+  HC ~ Inc, # income affects ability to purchase HC
+  A ~ II, #When iron intake is inadequate to meet requirements or to compensate for physiological or pathological losses, body iron stores become depleted
+  A ~ IID, # increased iron demand can cause body iron stores to be depleted, if iron intake is inadequate
+#  IID ~ Exe, # exercise causes iron demand
+#  IID ~ Lac, # lactation increases iron demand
+  A ~ Pre, # pregnancy increases iron demand
   A ~ Iinfl, #In patients with inflammation, withholding of iron from the plasma promotes iron deficient erythropoiesis and anaemia despite adequate body iron stores (functional iron deficiency). Obesity
-  A ~ IS, # Absolute ID occurs when iron stores are insufficient to meet the needs of the individual, and is particularly common in young children (younger than 5 years) and premenopausal (especially pregnant) women
-  IS ~ Mens,  # The main causes of absolute ID are excessive blood loss...
-  Mens ~ HC,
-  IS ~ InLoss,  # Gastrointestinal blood loss is the most important cause of ID in men and postmenopausal women
-  IS ~ BD, # Blood donation can cause iron deficiency
-  BD ~ IS, # If you are low own iron you can't get to donate 
-  Mens ~ IS, # Your iron store can influence your menstruation
-  HC ~ Iinfl, # obesity and mentabolic disease can influence your choise of HC
-  HC ~ Age, # age affect your choice of contraception, should there HC X age interaction
-  Iinfl ~ Age, # the older you are the more inflamed you get, "spline"?
-  A ~ Age, # due to iron requirements of growth younger women tend to be more iron deficient aas they have not yet requperated from growth. Should this be a "spline" ? 
- 
-  labels = c(
-    "A" = 'Iron\ndeficiency\nanemia',
-    "HC" = 'Use/Choise\nof HC',
-    "Mens"= 'Menstruation' ,
-    "Pre" = 'Pregnancy' ,
-    "Cb" = 'Child\nbirth' ,
-    "II" = 'Iron\nintake',
-    "IS" = 'Iron\nstores',
-   "Iinfl" = 'Inflammation',
-   "InLoss" = 'Gastrointestinal\nblood loss',
-   "Erosion" = "Erosion",
-   "CC" = 'Colon cancer',
-   "InflBo" = 'Inflamatory bowel disease',
-   "BD" = 'Blood\ndonation',
-   "ConInh" = 'Consumption\nof inhibitors',
-   "InMyc" = 'Intestinal\ndysfunction',
-   "InAcid" = 'Inadequate\nacidification',
-   "VD" = 'Low\niron\ndiet',
-   "Age" = 'Age'
-   
-  ),
-  exposure = "HC",
-  outcome = "A"
-)
-
-pastricha_dag.diag <- from_ggdag_2_diagrammer(pastricha_dag_mens_no)
-render_graph(
-  pastricha_dag.diag, 
-#  layout="tree"
-)
-```
-
-
-```{r}
-latents(pastricha_dag_mens_no) <- c("II","IS")
-exposures(pastricha_dag_mens_no) <- c("HC")
-outcomes(pastricha_dag_mens_no) <- c("A")
-
-```
-
-
-```{r}
-ggdag_adjustment_set(pastricha_dag_mens_no)
-```
-
-
-```{r}
-ggdag_instrumental(pastricha_dag_mens_no)
-```
-
-# FINAL DAG: Pastricha DAG with added complexity and exclusions + FinnReg & complexity
-
-- Associations for iron deficiency anemia derived from FinnReg added. Some conditions associated with iron deficiency are uncommon in this age group, and have therefore not been included.
-- Factors influencing contraception choice and use globally: a synthesis of systematic reviews by D’Souza et al. 2022 (https://doi.org/10.1080/13625187.2022.2096215)
-"We found 24 systematic reviews of mostly moderate or high quality. Factors affecting contraception use are remarkably similar among women in very different cultures and settings globally. Use of contraception is influenced by the perceived likelihood and appeal of pregnancy, and relationship status. It is influenced by women’s knowledge, beliefs, and perceptions of side effects and health risks. Male partners have a strong influence, as do peers’ views and experiences, and families’ expectations. Lack of education and poverty is linked with low contraception use, and social and cultural norms influence contraception and expectations of family size and timing. Contraception use also depends upon their availability, the accessibility, confidentiality and costs of health services, and attitudes, behaviour and skills of health practitioners."
-
-```{r}
-pastricha_dag_mens_no_fr <- ggdag::dagify(
-  #IS ~ II, #When iron intake is inadequate to meet requirements or to compensate for physiological or pathological losses, body iron stores become depleted
-  A ~ Iinfl, #In patients with inflammation, withholding of iron from the plasma promotes iron deficient erythropoiesis and anaemia despite adequate body iron stores (functional iron deficiency). Obesity
-  #A ~ IS, # Absolute ID occurs when iron stores are insufficient to meet the needs of the individual, and is particularly common in young children (younger than 5 years) and premenopausal (especially pregnant) women
+#  A ~ IS, # Absolute ID occurs when iron stores are insufficient to meet the needs of the individual, and is particularly common in young children (younger than 5 years) and premenopausal (especially pregnant) women
+  A ~ HC, # our exposure to outcome question, HC influences IDA not only through decreased menstrual blood loss, but also though effect on hepcidin (estrogen pos associated, progesterone neg association), parhaps also other mechanisms?
   A ~ Mens,  # The main causes of absolute ID are excessive blood loss...
   Mens ~ HC,
   A ~ InLoss,  # Gastrointestinal blood loss is the most important cause of ID in men and postmenopausal women
   InLoss ~ IBD, # IBD causes GI blood loss
   Iinfl ~ IBD, # IBD causes inflammation
-  Iinfl ~ asthma, 
+  Iinfl ~ Ob,
+#  InMyc ~ IBD, # IBD causes intestinal dysfunction (through inflammation?)
+#  InMyc ~ GBP, # gastric bypass, particularly Roux-en-Y, causes food to bypass duodenum.  
+#  InMyc ~ CD, # celiac disease
+#  InMyc ~ HP, # H. Pylori
   A ~ BD, # Blood donation can cause iron deficiency
-  A ~ Cb, # childbirth affects iron stores
-  A ~ MC, # miscarriage affects iron stores
-  A ~ Ab, # abortion affects iron stores
-  A ~ ED, # eating disorders addect iron stores
-  Cb ~ Pre, 
-  Ab ~ Pre, 
-  MC ~ Pre, 
+#  BD ~ IS, # If you are low own iron you can't get to donate 
+#  A ~ Cb, # childbirth affects iron stores
+#  A ~ MC, # miscarriage affects iron stores
+#  A ~ Ab, # abortion affects iron stores
+#  Cb ~ Pre, 
+#  Ab ~ Pre, 
+#  MC ~ Pre, 
   Pre ~ HC, 
-  #Mens ~ IS, # Your iron store can influence your menstruation
-  Mens ~ HMB, # heavy menstrual bleeding
+  Pre ~ Edu, # education level is associated with (age of first) pregnancy
+#  Mens ~ IS, # Your iron store can influence your menstruation
+  Mens ~ AUB, # heavy menstrual bleeding
   Mens ~ ED, # eating disorders effect on HPO axis
-  Mens ~ hypth, # hypothyroidism effect on HPO axis
-  HMB ~ PALM, # structural causes for HMB
-  HMB ~ COEIN, # non-structural causes for HMB
-  HC ~ Age, # age affect your choice of contraception, should there HC X age interaction
+  II ~ ED, 
+  Mens ~ hypth, # hypothyroidism effect on HPO axis and cause heavy menstrual bleeding (reduces SHBG (sex hormone binding globulin), and the reduction leads to greater estrogen exposure which can cause HMB)
+  A ~ hypth, 
+#  AUB ~ PALM, # structural causes for HMB
+#  AUB ~ COEIN, # non-structural causes for HMB
+  HC ~ Age, # age affect your choice of contraception, should there HC X age interaction (age >35 years relative contraindication for HC)
+  HC ~ Edu, # education level affects the choice of HC
+  HC ~ Res, # some regions may offer free HC for certain age groups
+#  HC ~ RelSt, # relationship status associated with need for HC and type of it 
   HC ~ Contr, # contraindication for HC use
-  HC ~ Tera, # teratogens (tretinoin, lithium)
-  HC ~ HMB, 
-  HC ~ Acne,
+#  HC ~ Tera, # teratogens (tretinoin, lithium)
+  HC ~ Ca, # previous breast cancer contraindication for HC
+  HC ~ AUB, # PALM-COEIN
+#  HC ~ Acne,
   HC ~ Smoking,
+  AEVE ~ Smoking, # smoking risk factor for  thorombosis
+  AEVE ~ RR, # hypertension is a risk factor for thrombosis and embolism
   Contr ~ RR, # uncontrolled hypertension (1yr exclusion after dx?)
-  Contr ~ VE, #  venous thrombosis (-> exclude DVT, PE)
-  Contr ~ AE, # arterial thrombosis (-> exclude stroke, TIA, ACS)
-  Contr ~ Migr, # aural migraine
-  Contr ~ DI, # drug interactions (antiepileptics)
-  Iinfl ~ MBO, # metabolisc syndrome
+  Contr ~ AEVE, # arterial thrombosis (-> exclude stroke, TIA, ACS, DVT, PE)
+  AEVE ~ Ca, # cancer increases risk for thrombosis
+  AEVE ~ A, #  IDA increases risk of venous thrombosis
+#  Contr ~ Migr, # aural migraine
+#  Contr ~ DI, # drug interactions (antiepileptics)
+  Iinfl ~ Age, # the older you are the more inflamed you get, "spline"?
+  Iinfl ~ MBO, # metabolic syndrome, DM1, DM2
   Iinfl ~ Smoking, 
+  Iinfl ~ HC, # use of COC has been linked to higher CRP, on the other hand IUD users in Finland have lower inflammatory markers
   RR ~ Smoking,
-  VE ~ Smoking,
-  AE ~ Smoking,
+  RR ~ Age,
+  MBO ~ RR, 
   MBO ~ Ob, # obesity risk factor for MBO
-  HMB ~ Ob, # obesity risk factor for HMB
-  Iinfl ~ Ca, # low grade inflammation -> cancer
+  AUB ~ Ob, # obesity risk factor for HMB
+  HC ~ Ob, # obesity (BMI>30) relative contraindication for COC 
+  Ca ~ Iinfl, # low grade inflammation -> cancer
   A ~ Ca, # cancer causes anemia
   A ~ Age, # due to iron requirements of growth younger women tend to be more iron deficient aas they have not yet requperated from growth. Should this be a "spline" ? 
  
   labels = c(
     "A" = 'Iron\ndeficiency\nanemia',
-    "HC" = 'Use/Choise\nof HC',
+    "IID" = 'Increased\niron\ndemand',
+    "HC" = 'HC use\nand type',
     "Contr" = 'Contraindication\n for HC use',
     "RR" = 'Hypertension',
     "AE" = 'Arterial\nthrombosis',
     "VE" = 'Venous\nthrombosis',
+    "AEVE" = 'Thrombosis/\nembolism',
     "Migr" = 'Aural\nmigraine',
     "DI" = 'Drug\ninteractions',
     "Tera" = 'Use of\nteratogens',
@@ -718,15 +624,21 @@ pastricha_dag_mens_no_fr <- ggdag::dagify(
     "hypth" = 'Hypo-\nthyroidism',
     "GBP" = 'Gastric\nbypass',
     "Smoking" = 'Smoking',
-    "asthma" = 'Asthma',
-    # "" = '',
+    "Exe" = 'Exercise',
+    "Lac" = 'Lactation',
     "Mens"= 'Menstruation' ,
     "Pre" = 'Pregnancy' ,
     "Cb" = 'Child\nbirth' ,
     "II" = 'Iron\nintake',
+    "Inc" = 'Income',
+    "Edu" = 'Education\nlevel',
+    "Res" = 'Place of\nresidence',
+    "RelSt" = 'Relationship\nstatus',
     "IS" = 'Iron\nstores',
    "Iinfl" = 'Inflammation',
    "InLoss" = 'Gastrointestinal\nblood loss',
+    "CD" = 'Celiac\ndisease',
+    "HP" = 'H. Pylori',
    "CC" = 'Colon cancer',
    "InflBo" = 'Inflamatory bowel disease',
    "BD" = 'Blood\ndonation',
@@ -735,39 +647,46 @@ pastricha_dag_mens_no_fr <- ggdag::dagify(
    "InAcid" = 'Inadequate\nacidification',
    "VD" = 'Low\niron\ndiet',
    "Age" = 'Age',
-   "HMB" = 'HMB\nN92'
+   "AUB" = 'AUB'
    
   ),
   exposure = "HC",
   outcome = "A"
 )
 
-pastricha_dag.diag <- from_ggdag_2_diagrammer(pastricha_dag_mens_no_fr)
+# tried to change node colours herem but this does not work? I wanted factors directly related to IDA to be a separate colour 
+# pastricha_dag <- pastricha_dag %>% 
+#    set_node_attrs(node = c("Age"), color = "pink")
+
+
+
+
+hc_dag_fin.diag <- from_ggdag_2_diagrammer(HC_DAG_fin)
 render_graph(
-  pastricha_dag.diag, 
-#  layout="tree"
+  hc_dag_fin.diag, 
+#  layout="neato"
 )
 ```
 
-Inflammation increases risk of anemia but is not an observable variable in our study. However, as many factors involved in the DAG cause inflammation it cannot be a latent variable and needs to be adjusted for. To  
-
 ```{r}
-latents(pastricha_dag_mens_no_fr) <- c("Mens", "Smoking", "BD", "Pre", "DI") 
-exposures(pastricha_dag_mens_no_fr) <- c("HC")
-outcomes(pastricha_dag_mens_no_fr) <- c("A")
+latents(HC_DAG_fin) <- c("II", "IID",  "Iinfl", "InLoss", "BD")
+exposures(HC_DAG_fin) <- c("HC")
+outcomes(HC_DAG_fin) <- c("A")
 
 ```
 
+Latent variables are not directly measured or observed in the data set (hidden or unobservable). They are used to represent underlying constructs or concepts that cannot be directly quantified, but might influence influence observed variables. Unobserved variables are those for which we lack measurements in the data set- They can be either latent or directly observable, we just lack the ability to measure them. In other words, latent variables represent underlying constructs we can't quantify, while unobserved variables can't be captured due to practical limitations. 
 
 ```{r}
-ggdag_adjustment_set(pastricha_dag_mens_no_fr)
+ggdag_adjustment_set(HC_DAG_fin)
+#how to define the latent variables to get the corract adjustement set
 ```
-Inflammation increases risk of anemia but is not an observable variable in our study. Instead, we will adjust for factors that cause inflammation.  
-
 
 ```{r}
-ggdag_instrumental(pastricha_dag_mens_no_fr)
+ggdag_instrumental(HC_DAG)
 ```
+
+
 
 # Dagitty
 
