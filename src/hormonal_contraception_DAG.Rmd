@@ -681,358 +681,169 @@ Latent variables are not directly measured or observed in the data set (hidden o
 ggdag_adjustment_set(HC_DAG_fin)
 #how to define the latent variables to get the corract adjustement set
 ```
+No way to block backdoor paths. The issue seems to be inflammation as well as the thrombosis/embolism pathways, so we need to exclude inflammatory conditions (as inflammation itself is latent) and thrombosis+embolism. 
+
+```{r}
+HC_DAG_fin <- ggdag::dagify(
+#  II ~ VD, # Low haem iron content (eg, from a vegetarian or vegan diet)
+#  II ~ ConInh, # Concomitant consumption of inhibitors of iron absorption (eg, calcium or tea)
+#  II ~ InAcid, # Inadequate acidification
+#  II ~ InMyc, # Intestinal mycosal dysfunction
+  II ~ Edu, # education level is associated with diet, such as vegan diet low in heam iron
+  Inc ~ Edu, # education level is associated with income
+  Res ~ Inc, # place of residence is associated with income level
+  HC ~ Inc, # income affects ability to purchase HC
+  A ~ II, #When iron intake is inadequate to meet requirements or to compensate for physiological or pathological losses, body iron stores become depleted
+  A ~ IID, # increased iron demand can cause body iron stores to be depleted, if iron intake is inadequate
+#  IID ~ Exe, # exercise causes iron demand
+#  IID ~ Lac, # lactation increases iron demand
+  A ~ Pre, # pregnancy increases iron demand
+#  A ~ Iinfl, #In patients with inflammation, withholding of iron from the plasma promotes iron deficient erythropoiesis and anaemia despite adequate body iron stores (functional iron deficiency). Obesity
+#  A ~ IS, # Absolute ID occurs when iron stores are insufficient to meet the needs of the individual, and is particularly common in young children (younger than 5 years) and premenopausal (especially pregnant) women
+  A ~ HC, # our exposure to outcome question, HC influences IDA not only through decreased menstrual blood loss, but also though effect on hepcidin (estrogen pos associated, progesterone neg association), parhaps also other mechanisms?
+  A ~ Mens,  # The main causes of absolute ID are excessive blood loss...
+  Mens ~ HC,
+  A ~ InLoss,  # Gastrointestinal blood loss is the most important cause of ID in men and postmenopausal women
+  InLoss ~ IBD, # IBD causes GI blood loss
+#  Iinfl ~ IBD, # IBD causes inflammation
+#  Iinfl ~ Ob,
+#  InMyc ~ IBD, # IBD causes intestinal dysfunction (through inflammation?)
+#  InMyc ~ GBP, # gastric bypass, particularly Roux-en-Y, causes food to bypass duodenum.  
+#  InMyc ~ CD, # celiac disease
+#  InMyc ~ HP, # H. Pylori
+  A ~ BD, # Blood donation can cause iron deficiency
+#  BD ~ IS, # If you are low own iron you can't get to donate 
+#  A ~ Cb, # childbirth affects iron stores
+#  A ~ MC, # miscarriage affects iron stores
+#  A ~ Ab, # abortion affects iron stores
+#  Cb ~ Pre, 
+#  Ab ~ Pre, 
+#  MC ~ Pre, 
+  Pre ~ HC, 
+  Pre ~ Edu, # education level is associated with (age of first) pregnancy
+#  Mens ~ IS, # Your iron store can influence your menstruation
+  Mens ~ AUB, # heavy menstrual bleeding
+  Mens ~ ED, # eating disorders effect on HPO axis
+  II ~ ED, 
+  Mens ~ hypth, # hypothyroidism effect on HPO axis and cause heavy menstrual bleeding (reduces SHBG (sex hormone binding globulin), and the reduction leads to greater estrogen exposure which can cause HMB)
+  A ~ hypth, 
+#  AUB ~ PALM, # structural causes for HMB
+#  AUB ~ COEIN, # non-structural causes for HMB
+  HC ~ Age, # age affect your choice of contraception, should there HC X age interaction (age >35 years relative contraindication for HC)
+  HC ~ Edu, # education level affects the choice of HC
+  HC ~ Res, # some regions may offer free HC for certain age groups
+#  HC ~ RelSt, # relationship status associated with need for HC and type of it 
+  HC ~ Contr, # contraindication for HC use
+#  HC ~ Tera, # teratogens (tretinoin, lithium)
+  HC ~ Ca, # previous breast cancer contraindication for HC
+  HC ~ AUB, # PALM-COEIN
+#  HC ~ Acne,
+  HC ~ Smoking,
+#  AEVE ~ Smoking, # smoking risk factor for  thorombosis
+#  AEVE ~ RR, # hypertension is a risk factor for thrombosis and embolism
+  Contr ~ RR, # uncontrolled hypertension (1yr exclusion after dx?)
+#  Contr ~ AEVE, # arterial thrombosis (-> exclude stroke, TIA, ACS, DVT, PE)
+#  AEVE ~ Ca, # cancer increases risk for thrombosis
+#  AEVE ~ A, #  IDA increases risk of venous thrombosis
+#  Contr ~ Migr, # aural migraine
+#  Contr ~ DI, # drug interactions (antiepileptics)
+#  Iinfl ~ Age, # the older you are the more inflamed you get, "spline"?
+#  Iinfl ~ MBO, # metabolic syndrome, DM1, DM2
+#  Iinfl ~ Smoking, 
+#  Iinfl ~ HC, # use of COC has been linked to higher CRP, on the other hand IUD users in Finland have lower inflammatory markers
+  RR ~ Smoking,
+  RR ~ Age,
+  MBO ~ RR, 
+  MBO ~ Ob, # obesity risk factor for MBO
+  AUB ~ Ob, # obesity risk factor for HMB
+  HC ~ Ob, # obesity (BMI>30) relative contraindication for COC 
+#  Ca ~ Iinfl, # low grade inflammation -> cancer
+  A ~ Ca, # cancer causes anemia
+  A ~ Age, # due to iron requirements of growth younger women tend to be more iron deficient aas they have not yet requperated from growth. Should this be a "spline" ? 
+ 
+  labels = c(
+    "A" = 'Iron\ndeficiency\nanemia',
+    "IID" = 'Increased\niron\ndemand',
+    "HC" = 'HC use\nand type',
+    "Contr" = 'Contraindication\n for HC use',
+    "RR" = 'Hypertension',
+    "AE" = 'Arterial\nthrombosis',
+    "VE" = 'Venous\nthrombosis',
+    "AEVE" = 'Thrombosis/\nembolism',
+    "Migr" = 'Aural\nmigraine',
+    "DI" = 'Drug\ninteractions',
+    "Tera" = 'Use of\nteratogens',
+    "MBO" = 'MBO',
+    "Ca" = 'Cancer',
+    "Ob" = 'Obesity',
+    "PALM" = 'PALM',
+    "COEIN" = 'COEIN',
+    "Ab" = 'Abortion',
+    "MC" = 'Miscarriage',
+    "ED" = 'Eating\ndisorder',
+    "Acne" = 'Acne',
+    "IBD" = 'IBD',
+    "hypth" = 'Hypo-\nthyroidism',
+    "GBP" = 'Gastric\nbypass',
+    "Smoking" = 'Smoking',
+    "Exe" = 'Exercise',
+    "Lac" = 'Lactation',
+    "Mens"= 'Menstruation' ,
+    "Pre" = 'Pregnancy' ,
+    "Cb" = 'Child\nbirth' ,
+    "II" = 'Iron\nintake',
+    "Inc" = 'Income',
+    "Edu" = 'Education\nlevel',
+    "Res" = 'Place of\nresidence',
+    "RelSt" = 'Relationship\nstatus',
+    "IS" = 'Iron\nstores',
+   "Iinfl" = 'Inflammation',
+   "InLoss" = 'Gastrointestinal\nblood loss',
+    "CD" = 'Celiac\ndisease',
+    "HP" = 'H. Pylori',
+   "CC" = 'Colon cancer',
+   "InflBo" = 'Inflamatory bowel disease',
+   "BD" = 'Blood\ndonation',
+   "ConInh" = 'Consumption\nof inhibitors',
+   "InMyc" = 'Intestinal\ndysfunction',
+   "InAcid" = 'Inadequate\nacidification',
+   "VD" = 'Low\niron\ndiet',
+   "Age" = 'Age',
+   "AUB" = 'AUB'
+   
+  ),
+  exposure = "HC",
+  outcome = "A"
+)
+
+# tried to change node colours herem but this does not work? I wanted factors directly related to IDA to be a separate colour 
+# pastricha_dag <- pastricha_dag %>% 
+#    set_node_attrs(node = c("Age"), color = "pink")
+
+
+
+
+hc_dag_fin.diag <- from_ggdag_2_diagrammer(HC_DAG_fin)
+render_graph(
+  hc_dag_fin.diag, 
+#  layout="neato"
+)
+```
+
+```{r}
+latents(HC_DAG_fin) <- c("II", "IID", "InLoss", "BD", "Pre")
+exposures(HC_DAG_fin) <- c("HC")
+outcomes(HC_DAG_fin) <- c("A")
+
+```
+
+
+```{r}
+ggdag_adjustment_set(HC_DAG_fin)
+#how to define the latent variables to get the correct adjustement set
+```
 
 ```{r}
 ggdag_instrumental(HC_DAG)
 ```
 
-
-
-# Dagitty
-
-```{r}
-library(dagitty)
-
-g <- dagitty('dag {
-
-bb="-7.123,-7.75,6.586,6.759"
-
-"Blood donation" [latent,pos="-5.981,-1.149"]
-
-"Contraindication for HC use" [pos="2.970,2.824"]
-
-"Eating disorder" [pos="-1.662,-6.541"]
-
-"Education level" [pos="1.238,-4.346"]
-
-"Gastrointestinal blood loss" [latent,pos="-4.193,3.364"]
-
-"HC use and type" [exposure,pos="1.638,-0.677"]
-
-"Increased iron demand" [latent,pos="-5.666,0.827"]
-
-"Iron deficiency anemia" [outcome,pos="-2.220,-0.062"]
-
-"Iron intake" [latent,pos="-2.177,-4.085"]
-
-"Place of residence" [pos="5.444,-1.886"]
-
-"Thrombosis/embolism" [pos="-0.539,3.811"]
-
-AUB [pos="3.073,-2.242"]
-
-Age [pos="0.585,1.249"]
-
-Cancer [pos="-0.888,1.120"]
-
-Hypertension [pos="1.660,4.705"]
-
-Hypothyroidism [pos="-3.943,-2.683"]
-
-IBD [pos="-1.960,5.550"]
-
-Income [pos="3.828,-3.830"]
-
-Inflammation [latent,pos="1.195,2.585"]
-
-MBO [pos="4.502,4.040"]
-
-Menstruation [latent,pos="-0.614,-3.262"]
-
-Obesity [latent,pos="4.302,0.872"]
-
-Pregnancy [pos="-0.362,-2.165"]
-
-Smoking [latent,pos="-0.701,2.428"]
-
-"Blood donation" -> "Iron deficiency anemia"
-
-"Contraindication for HC use" -> "HC use and type"
-
-"Eating disorder" -> "Iron intake"
-
-"Eating disorder" -> Menstruation
-
-"Education level" -> "HC use and type"
-
-"Education level" -> "Iron intake"
-
-"Education level" -> Income
-
-"Education level" -> Pregnancy
-
-"Gastrointestinal blood loss" -> "Iron deficiency anemia"
-
-"HC use and type" -> "Iron deficiency anemia"
-
-"HC use and type" -> Inflammation
-
-"HC use and type" -> Menstruation
-
-"HC use and type" -> Pregnancy
-
-"Increased iron demand" -> "Iron deficiency anemia"
-
-"Iron deficiency anemia" -> "Thrombosis/embolism"
-
-"Iron intake" -> "Iron deficiency anemia"
-
-"Place of residence" -> "HC use and type"
-
-"Thrombosis/embolism" -> "Contraindication for HC use"
-
-AUB -> "HC use and type"
-
-AUB -> Menstruation
-
-Age -> "HC use and type"
-
-Age -> "Iron deficiency anemia"
-
-Age -> Hypertension
-
-Age -> Inflammation
-
-Cancer -> "HC use and type"
-
-Cancer -> "Iron deficiency anemia"
-
-Cancer -> "Thrombosis/embolism"
-
-Hypertension -> "Contraindication for HC use"
-
-Hypertension -> "Thrombosis/embolism"
-
-Hypertension -> MBO
-
-Hypothyroidism -> "Iron deficiency anemia"
-
-Hypothyroidism -> Menstruation
-
-IBD -> "Gastrointestinal blood loss"
-
-IBD -> Inflammation
-
-Income -> "HC use and type"
-
-Income -> "Place of residence"
-
-Inflammation -> "Iron deficiency anemia"
-
-Inflammation -> Cancer
-
-MBO -> Inflammation
-
-Menstruation -> "Iron deficiency anemia"
-
-Obesity -> "HC use and type"
-
-Obesity -> AUB
-
-Obesity -> Inflammation
-
-Obesity -> MBO
-
-Pregnancy -> "Iron deficiency anemia"
-
-Smoking -> "HC use and type"
-
-Smoking -> "Thrombosis/embolism"
-
-Smoking -> Hypertension
-
-}')
-plot(g)
-```
-
-```{r}
-# all paths between HC and IDA
-paths(g, "HC use and type", "Iron deficiency anemia")
-```
-```{r}
-impliedConditionalIndependencies(g)
-```
-## Minimal adjustment set
-
-```{r}
-# Minimal adjustment set
-print("The minimal adjustment set")
-adjustmentSets(g,"HC use and type","Iron deficiency anemia")
-
-```
-
-Dagitty desktop: "Model contains cycle: Iron deficiency anemia→Thrombosis/embolism→Contraindication for HC use→HC use and type→Iron deficiency anemia"
-
-## Remove the pathways between IDA and thrombosis/embolism + HC and inflammation, we end up with: 
-
-Is there grounds for removing pathways? Recheck literature
-
-```{r}
-library(dagitty)
-
-g <- dagitty('dag {
-
-bb="-7.123,-7.75,6.586,6.759"
-
-"Blood donation" [latent,pos="-5.981,-1.149"]
-
-"Contraindication for HC use" [pos="2.970,2.824"]
-
-"Eating disorder" [pos="-1.662,-6.541"]
-
-"Education level" [pos="1.238,-4.346"]
-
-"Gastrointestinal blood loss" [latent,pos="-4.193,3.364"]
-
-"HC use and type" [exposure,pos="1.638,-0.677"]
-
-"Increased iron demand" [latent,pos="-5.666,0.827"]
-
-"Iron deficiency anemia" [outcome,pos="-2.220,-0.062"]
-
-"Iron intake" [latent,pos="-2.177,-4.085"]
-
-"Place of residence" [pos="5.444,-1.886"]
-
-"Thrombosis/embolism" [pos="-0.539,3.811"]
-
-AUB [pos="3.073,-2.242"]
-
-Age [pos="0.585,1.249"]
-
-Cancer [pos="-0.888,1.120"]
-
-Hypertension [pos="1.660,4.705"]
-
-Hypothyroidism [pos="-3.943,-2.683"]
-
-IBD [pos="-1.960,5.550"]
-
-Income [pos="3.828,-3.830"]
-
-Inflammation [latent,pos="1.195,2.585"]
-
-MBO [pos="4.502,4.040"]
-
-Menstruation [latent,pos="-0.614,-3.262"]
-
-Obesity [latent,pos="4.302,0.872"]
-
-Pregnancy [pos="-0.362,-2.165"]
-
-Smoking [latent,pos="-0.701,2.428"]
-
-"Blood donation" -> "Iron deficiency anemia"
-
-"Contraindication for HC use" -> "HC use and type"
-
-"Eating disorder" -> "Iron intake"
-
-"Eating disorder" -> Menstruation
-
-"Education level" -> "HC use and type"
-
-"Education level" -> "Iron intake"
-
-"Education level" -> Income
-
-"Education level" -> Pregnancy
-
-"Gastrointestinal blood loss" -> "Iron deficiency anemia"
-
-"HC use and type" -> "Iron deficiency anemia"
-
-"HC use and type" -> Menstruation
-
-"HC use and type" -> Pregnancy
-
-"Increased iron demand" -> "Iron deficiency anemia"
-
-"Iron intake" -> "Iron deficiency anemia"
-
-"Place of residence" -> "HC use and type"
-
-"Thrombosis/embolism" -> "Contraindication for HC use"
-
-AUB -> "HC use and type"
-
-AUB -> Menstruation
-
-Age -> "HC use and type"
-
-Age -> "Iron deficiency anemia"
-
-Age -> Hypertension
-
-Age -> Inflammation
-
-Cancer -> "HC use and type"
-
-Cancer -> "Iron deficiency anemia"
-
-Cancer -> "Thrombosis/embolism"
-
-Hypertension -> "Contraindication for HC use"
-
-Hypertension -> "Thrombosis/embolism"
-
-Hypertension -> MBO
-
-Hypothyroidism -> "Iron deficiency anemia"
-
-Hypothyroidism -> Menstruation
-
-IBD -> "Gastrointestinal blood loss"
-
-IBD -> Inflammation
-
-Income -> "HC use and type"
-
-Income -> "Place of residence"
-
-Inflammation -> "Iron deficiency anemia"
-
-Inflammation -> Cancer
-
-MBO -> Inflammation
-
-Menstruation -> "Iron deficiency anemia"
-
-Obesity -> "HC use and type"
-
-Obesity -> AUB
-
-Obesity -> Inflammation
-
-Obesity -> MBO
-
-Pregnancy -> "Iron deficiency anemia"
-
-Smoking -> "HC use and type"
-
-Smoking -> "Thrombosis/embolism"
-
-Smoking -> Hypertension
-
-}')
-plot(g)
-```
-
-```{r}
-# all paths between HC and IDA
-paths(g, "HC use and type", "Iron deficiency anemia")
-```
-
-```{r}
-impliedConditionalIndependencies(g)
-```
-
-## Minimal adjustment set
-
-```{r}
-# Minimal adjustment set
-print("The minimal adjustment set")
-adjustmentSets(g,"HC use and type","Iron deficiency anemia")
-
-```
- Dagitty desktop: "Biasing paths are open. No adjustment sets found." So this set does not work. Try removing later variables (adjust) to find where the issue is. Likely something in the inflammation/thrombosis downlines?
