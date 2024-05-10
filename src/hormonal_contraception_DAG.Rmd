@@ -698,7 +698,7 @@ HC_DAG_fin <- ggdag::dagify(
 #  IID ~ Exe, # exercise causes iron demand
 #  IID ~ Lac, # lactation increases iron demand
   A ~ Pre, # pregnancy increases iron demand
-#  A ~ Iinfl, #In patients with inflammation, withholding of iron from the plasma promotes iron deficient erythropoiesis and anaemia despite adequate body iron stores (functional iron deficiency). Obesity
+  A ~ Iinfl, #In patients with inflammation, withholding of iron from the plasma promotes iron deficient erythropoiesis and anaemia despite adequate body iron stores (functional iron deficiency). Obesity
 #  A ~ IS, # Absolute ID occurs when iron stores are insufficient to meet the needs of the individual, and is particularly common in young children (younger than 5 years) and premenopausal (especially pregnant) women
   A ~ HC, # our exposure to outcome question, HC influences IDA not only through decreased menstrual blood loss, but also though effect on hepcidin (estrogen pos associated, progesterone neg association), parhaps also other mechanisms?
   A ~ Mens,  # The main causes of absolute ID are excessive blood loss...
@@ -706,7 +706,7 @@ HC_DAG_fin <- ggdag::dagify(
   A ~ InLoss,  # Gastrointestinal blood loss is the most important cause of ID in men and postmenopausal women
   InLoss ~ IBD, # IBD causes GI blood loss
 #  Iinfl ~ IBD, # IBD causes inflammation
-#  Iinfl ~ Ob,
+  Iinfl ~ Ob,
 #  InMyc ~ IBD, # IBD causes intestinal dysfunction (through inflammation?)
 #  InMyc ~ GBP, # gastric bypass, particularly Roux-en-Y, causes food to bypass duodenum.  
 #  InMyc ~ CD, # celiac disease
@@ -753,8 +753,8 @@ HC_DAG_fin <- ggdag::dagify(
 #  Iinfl ~ HC, # use of COC has been linked to higher CRP, on the other hand IUD users in Finland have lower inflammatory markers
   RR ~ Smoking,
   RR ~ Age,
-  MBO ~ RR, 
-  MBO ~ Ob, # obesity risk factor for MBO
+#  MBO ~ RR, 
+#  MBO ~ Ob, # obesity risk factor for MBO
   AUB ~ Ob, # obesity risk factor for HMB
   HC ~ Ob, # obesity (BMI>30) relative contraindication for COC 
 #  Ca ~ Iinfl, # low grade inflammation -> cancer
@@ -773,7 +773,7 @@ HC_DAG_fin <- ggdag::dagify(
     "Migr" = 'Aural\nmigraine',
     "DI" = 'Drug\ninteractions',
     "Tera" = 'Use of\nteratogens',
-    "MBO" = 'MBO',
+    "MBO" = 'Metabolic\nsyndrome',
     "Ca" = 'Cancer',
     "Ob" = 'Obesity',
     "PALM" = 'PALM',
@@ -831,7 +831,7 @@ render_graph(
 ```
 
 ```{r}
-latents(HC_DAG_fin) <- c("II", "IID", "InLoss", "BD", "Pre")
+latents(HC_DAG_fin) <- c("II", "IID", "InLoss", "BD", "Pre", "Iinfl")
 exposures(HC_DAG_fin) <- c("HC")
 outcomes(HC_DAG_fin) <- c("A")
 
@@ -847,3 +847,43 @@ ggdag_adjustment_set(HC_DAG_fin)
 ggdag_instrumental(HC_DAG)
 ```
 
+## Exclusion criteria 
+
+Inflammation in Obesity, Diabetes and related Disorders (Rohm et al., DOI 10.1016/j.immuni.2021.12.013): Obesity, metabolic syndrome, DM2, IBD and rheumatoid arthritis all important causes or drivers of inflammation. Note that the exclusion list is not a comprehensive list of all causes of inflammation; rather inflammatory conditions that are common on a whole population basis in premenopausal women. Exclude these diagnosis for 12 months after diagnosis.
+- E10 DM1
+- E11 DM2
+- E66 obesity and metabolic syndrome
+- K50 and K51 IBD
+- M05 & M06 Rheumatic diseases - likely not available as ICD, but we could use Kela reimbursment code 202 / prescription data  
+
+Thrombosis and embolism: exclude all cases
+- I80 DVT
+- I81 portal thrombosis
+- I82 other venous thrombosis (parhaps only I82.88?)
+- O22.3 + O87.1 DVT in/after pregnancy
+- I21 STEMI/NSTEMI/ACS (+R07 chest pain?)
+- I26 PE
+- 163 stroke 
+- G45 TIA 
+
+Cancer: exclude all breast cancer diagnosis (due to also being absolute contraindication for COC use), and any other cancer diagnosis is excluded for diagnosis within the past 5 years. Use cancer registry, not ICD codes. 
+
+## Adjustment (separate models)  
+Inflammation (Obesity, metabolic syndrome, DM, IBD, rheumatoid arthritis, gout all important causes or drivers of inflammation) adjusted for diagnosis >= 12 months ago
+- same as above
+
+AUB: diagnosis of PALM-COEIN
+- N80 endometriosis
+- N84 polyps (does this need to be split into smaller groups?)
+- N92 HMB (does this need to be split into smaller groups?)
+- N93 other uterine/vaginal bleeding 
+
+Age 
+- Linear variable (categorical another option, ie age groups)
+
+Education level
+- Based on statistic, categorical variable
+
+## Matching
+- Age 
+- Place of residence 
