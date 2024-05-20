@@ -234,6 +234,166 @@ render_graph(
 ```
 
 
+## Color experiments
+
+Possible attributes to set:
+
+> get_global_graph_attr_info(g)
+
+# A tibble: 18 × 3
+
+   attr        value      attr_type
+   
+   <chr>       <chr>      <chr>    
+   
+ 1 layout      dot        graph    
+ 
+ 2 rankdir     TB         graph    
+ 
+ 3 outputorder edgesfirst graph    
+ 
+ 4 bgcolor     white      graph    
+ 
+ 5 fontname    Helvetica  node     
+ 
+ 6 fontsize    10         node     
+ 
+ 7 shape       circle     node     
+ 
+ 8 fixedsize   true       node     
+ 
+ 9 width       0.5        node     
+ 
+10 style       filled     node     
+
+11 fillcolor   aliceblue  node     
+
+12 color       gray70     node     
+
+13 fontcolor   gray50     node     
+
+14 fontname    Helvetica  edge     
+
+15 fontsize    8          edge     
+
+16 len         1.5        edge     
+
+17 color       gray80     edge     
+
+18 arrowsize   0.5        edge 
+
+
+```{r}
+get_node_df(g)
+```
+
+
+I think you could add arbitary columns to node_df and set plotting attributes based on them.
+
+
+```{r}
+g1 <-
+  g %>%
+  set_node_attrs(
+    node_attr = color,
+    values = "red",
+    nodes = c(1))
+
+
+render_graph(
+  g1, 
+)
+
+```
+
+```{r}
+g2 <-
+  g %>%
+  set_node_attrs(
+    node_attr = fillcolor,
+    values = "pink", # this makes text white
+    nodes = c(1)) %>% 
+    set_node_attrs(
+    node_attr = fontcolor,
+    values = "black", # this makes text white
+    
+    #nodes = c(1)
+    ) 
+
+
+render_graph(
+  g2, 
+)
+
+```
+
+
+> get_edge_df(g2)
+
+   id from to  rel
+
+1   1    2  7 <NA>
+
+2   2    3  7 <NA>
+
+3   3    3 12 <NA>
+
+4   4    4 10 <NA>
+
+5   5    5  1 <NA> cancer is 5 and anemia 1
+
+6   6    6  1 <NA>
+
+7   7    6  7 <NA>
+
+8   8    7  1 <NA>
+
+9   9    7 10 <NA>
+
+10 10    7 12 <NA>
+
+11 11    8  7 <NA>
+
+12 12    9  1 <NA>
+
+13 13    9  7 <NA>
+
+14 14   10  1 <NA>
+
+15 15   10  7 <NA>
+
+16 16   11  9 <NA>
+
+17 17   12  6 <NA>
+
+18 18   12  7 <NA>
+
+
+
+```{r}
+g3 <-
+  g2 %>%
+  DiagrammeR::set_edge_attrs( # igraph has the same function, so you need to specify
+    edge_attr = color,
+    values = "red", 
+    from = 5,
+    to =1
+  ) %>%   DiagrammeR::set_edge_attrs( # igraph has the same function, so you need to specify
+    edge_attr = arrowsize,
+    values = 2, 
+    from = 5,
+    to =1
+  )
+
+render_graph(
+  g3, 
+)
+
+```
+
+
+
+
 ```{r}
 #grViz(g)
 ```
