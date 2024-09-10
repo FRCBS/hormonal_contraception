@@ -19,6 +19,9 @@ library(tidyverse)
 library(dagitty)
 library(ggdag)
 library(tidygraph)
+library(DiagrammeRsvg)
+library(rsvg)
+library(magick)
 ```
 
 
@@ -96,7 +99,7 @@ pastricha_dag <- ggdag::dagify(
   
   
   labels = c(
-    "A" = 'Iron\ndeficiency\nanemia',
+    "A" = 'IDA',
     "HC" = 'Use/Choise\nof HC',
     "Mens"= 'Menstruation' ,
     "Pre" = 'Pregnancy' ,
@@ -244,7 +247,7 @@ pastricha_dag_mens <- ggdag::dagify(
   A ~ Age, # due to iron requirements of growth younger women tend to be more iron deficient aas they have not yet requperated from growth. Should this be a "spline" ? 
  
   labels = c(
-    "A" = 'Iron\ndeficiency\nanemia',
+    "A" = 'IDA',
     "IID" = 'Increased\niron\ndemand',
     "HC" = 'HC use\nand type',
     "Contr" = 'Contraindication\n for HC use',
@@ -321,7 +324,7 @@ get_node_df(pastricha_dag.diag)
 
 
 id|label|id_external
-1		Iron\ndeficiency\nanemia	A	
+1		IDA	A	
 2		Arterial\nthrombosis	AE	
 3		AUB	AUB	
 4		Abortion	Ab	
@@ -399,7 +402,7 @@ render_graph(
 ```
 
 id|label|id_external
-1		Iron\ndeficiency\nanemia	A	
+1		IDA	A	
 2		Arterial\nthrombosis	AE	
 3		AUB	AUB	
 4		Abortion	Ab	
@@ -481,7 +484,7 @@ get_edge_df(g2)
 ```
 
 id|label|id_external
-1		Iron\ndeficiency\nanemia	A	
+1		IDA	A	
 2		Arterial\nthrombosis	AE	
 3		AUB	AUB	
 4		Abortion	Ab	
@@ -655,6 +658,8 @@ render_graph(
 
 Now that we have visualized the pathways between hormonal contraception and iron deficiency anemia, we can start building the DAG. 
 
+
+
 # Hormonal contraception and iron deficiency anemia DAG
 
 https://www.r-bloggers.com/2019/08/causal-inference-with-dags-in-r/: Directed cyclical graphs (DAGs) are a powerful tool to understand and deal with causal inference. The book “Causal inference in statistics: a primer” is a useful reference to start, authored from Pearl, Glymour, and Jewell. Directed cyclical graphs (DAGs) are a powerful tool to understand and deal with causal inference. Causal inference in statistics: a primer” is a good resource from. A DAG is a directed acyclic graph, a visual encoding of a joint distribution of a set of variables. In a DAG all the variables are depicted as vertices and connected by arrows or directed paths, sequences of arrows in which every arrow points to some direction. DAGs are acyclic because no directed path can form a closed loop.
@@ -763,7 +768,7 @@ HC_DAG <- ggdag::dagify(
   A ~ Age, # due to iron requirements of growth younger women tend to be more iron deficient aas they have not yet requperated from growth. Should this be a "spline" ? 
  
   labels = c(
-    "A" = 'Iron\ndeficiency\nanemia',
+    "A" = 'IDA',
     "IID" = 'Increased\niron\ndemand',
     "HC" = 'HC use\nand type',
     "Contr" = 'Contraindication\n for HC use',
@@ -828,10 +833,6 @@ render_graph(
 ## HC and IDA DAG: adjustment set
 
 Finally, we create the minimal DAG to calculate adjustment sets. 
-
-Child birth and pregnancy create backdoor paths. Exclude all data prior to first pregnancy.
-Use of hormonal contraception to treat excessive menstrual flow. Exclude persons with excessive menstrual flow.
-Similarly cancer could cause all kinds of loops so all persons with cancer diagnosis are best excluded.
 
 ```{r}
 HC_DAG_fin <- ggdag::dagify(
@@ -912,7 +913,7 @@ HC_DAG_fin <- ggdag::dagify(
   A ~ Age, # due to iron requirements of growth younger women tend to be more iron deficient aas they have not yet requperated from growth. Should this be a "spline" ? 
  
   labels = c(
-    "A" = 'Iron\ndeficiency\nanemia',
+    "A" = 'IDA',
     "IID" = 'Increased\niron\ndemand',
     "HC" = 'HC use\nand type',
     "Contr" = 'Contraindication\n for HC use',
@@ -993,7 +994,7 @@ Latent variables are not directly measured or observed in the data set (hidden o
 ggdag_adjustment_set(HC_DAG_fin)
 #how to define the latent variables to get the corract adjustement set
 ```
-No way to block backdoor paths. The issue seems to be inflammation as well as the thrombosis/embolism pathways, so we need to exclude inflammatory conditions (as inflammation itself is latent) and thrombosis+embolism. 
+No way to block backdoor paths. The issue seems to be inflammation as well as the thrombosis/embolism pathways, so we need to adjust for inflammatory conditions (as inflammation itself is latent) and thrombosis+embolism. 
 
 ```{r}
 HC_DAG_fin <- ggdag::dagify(
@@ -1074,7 +1075,7 @@ HC_DAG_fin <- ggdag::dagify(
   A ~ Age, # due to iron requirements of growth younger women tend to be more iron deficient aas they have not yet requperated from growth. Should this be a "spline" ? 
  
   labels = c(
-    "A" = 'Iron\ndeficiency\nanemia',
+    "A" = 'IDA',
     "IID" = 'Increased\niron\ndemand',
     "HC" = 'HC use\nand type',
     "Contr" = 'Contraindication\n for HC use',
@@ -1087,7 +1088,7 @@ HC_DAG_fin <- ggdag::dagify(
     "Tera" = 'Use of\nteratogens',
     "MBO" = 'Metabolic\nsyndrome',
     "Ca" = 'Cancer',
-    "Ob" = 'Obesity',
+    "Ob" = 'Obesity &\nmetabolic\nsyndrome',
     "PALM" = 'PALM',
     "COEIN" = 'COEIN',
     "Ab" = 'Abortion',
@@ -1173,22 +1174,39 @@ get_node_df(hc_dag_fin.diag)
 
 You can add arbitrary columns to node_df and set plotting attributes based on them. 
 
+
+    set_node_attrs(
+    node_attr = fontcolor,
+    values = "black") 
+
 ```{r}
 # start by adding border colors
 g1 <-
   hc_dag_fin.diag %>%
   set_node_attrs(
     node_attr = color,
-    values = "#FA92B1",
+    values = "#AD002A99", # outcome 
     nodes = c(1)) %>% # you can add nodes within the bracket, separate with ,
   set_node_attrs(
     node_attr = color,
-    values = "#D0E69E",
-    nodes = c(9)) %>%
+    values = "#42B54099", 
+    nodes = c(9)) %>%  # exposure 
   set_node_attrs(
     node_attr = color,
-    values = "#D0D8E9",
-    nodes = c(2,3,4,5,6,7,8,10,11,12,13,14,15,16,17,18,19,20,21,22)) 
+    values = "#00468B99", 
+    nodes = c(3,20)) %>%  # matching criteria 
+  set_node_attrs(
+    node_attr = color,
+    values = "#0099B499", 
+    nodes = c(2,5,8,10,15,17,18,22)) %>%  # model adjustment 
+  set_node_attrs(
+    node_attr = color,
+    values = "#925E9F99", 
+    nodes = c(11,12,13,14)) %>%   # latents (latent variables represent underlying constructs we can't quantify) 
+  set_node_attrs(
+    node_attr = color,
+    values = "#ED000099", 
+    nodes = c(4,6,7,16,19,21)) 
 
 render_graph(
   g1, 
@@ -1203,43 +1221,43 @@ g2 <-
   g1 %>%
   set_node_attrs(
     node_attr = fillcolor,
-    values = "#ED0000FF", # this makes text white 
+    values = "#AD002A99", # this makes text white 
     nodes = c(1)) %>%  # outcome
     set_node_attrs(
     node_attr = fontcolor,
     values = "black") %>% 
   set_node_attrs(
     node_attr = fillcolor,
-    values = "#42B540FF", 
+    values = "#42B54099", 
     nodes = c(9)) %>%  # exposure 
     set_node_attrs(
     node_attr = fontcolor,
     values = "black") %>% 
   set_node_attrs(
     node_attr = fillcolor,
-    values = "#00468BFF", 
+    values = "#00468B99", 
     nodes = c(3,20)) %>%  # matching criteria 
     set_node_attrs(
     node_attr = fontcolor,
     values = "black") %>% 
   set_node_attrs(
     node_attr = fillcolor,
-    values = "#0099B4FF", 
+    values = "#0099B499", 
     nodes = c(2,5,8,10,15,17,18,22)) %>%  # model adjustment 
     set_node_attrs(
     node_attr = fontcolor,
     values = "black") %>% 
   set_node_attrs(
     node_attr = fillcolor,
-    values = "#925E9FFF", 
+    values = "#925E9F99", 
     nodes = c(11,12,13,14)) %>%   # latents (latent variables represent underlying constructs we can't quantify) 
     set_node_attrs(
     node_attr = fontcolor,
     values = "black") %>% 
   set_node_attrs(
     node_attr = fillcolor,
-    values = "#FDAF91FF", 
-    nodes = c(4,6,16,19,21)) %>%   # unobserved (unobserved variables can't be captured due to practical limitations) 
+    values = "#ED000099", 
+    nodes = c(4,6,7,16,19,21)) %>%   # unobserved (unobserved variables can't be captured due to practical limitations) 
     set_node_attrs(
     node_attr = fontcolor,
     values = "black") 
@@ -1266,11 +1284,11 @@ g3 <-
   g2 %>%
   DiagrammeR::set_edge_attrs( # igraph has the same function, so you need to specify
     edge_attr = color,
-    values = "#D0D8E9" # not specifying nodes makes all arrows the chosen color
+    values = "#1B191999" # not specifying nodes makes all arrows the chosen color
   ) %>%
   DiagrammeR::set_edge_attrs( # igraph has the same function, so you need to specify
     edge_attr = color,
-    values = "#D0E69E", 
+    values = "#42B540FF", 
     from = 9,
     to =1
   ) %>%   DiagrammeR::set_edge_attrs( # igraph has the same function, so you need to specify
@@ -1299,6 +1317,29 @@ render_graph(
   g4, 
 )
 ```
+
+## Add minimum adjustment set as squares
+
+```{r}
+
+g5 <- g4 %>%
+  set_node_attrs(
+    node_attr = shape, 
+    values = "square", 
+    nodes = c(2, 3, 5, 8, 17))
+
+render_graph(g5)
+
+```
+
+# save DAG
+
+```{r}
+export_graph(g5)
+
+```
+
+
 
 
 
