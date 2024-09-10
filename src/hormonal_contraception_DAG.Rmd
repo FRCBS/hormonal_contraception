@@ -1,6 +1,6 @@
 ---
-title: "DAG for anemia in FinOCC"
-author: "Mikko Arvas"
+title: "DAG for anemia in FinOCCo"
+author: "Mikko Arvas and Sofie Ekroos"
 date: "`r Sys.Date()`"
 output:
   html_document: default
@@ -21,28 +21,6 @@ library(ggdag)
 library(tidygraph)
 ```
 
-TODO:
-
-
--what do we do with age and time ? Can we break loops with some timing?
-
-  
-  -if we consider only women with out kids does age matter for inflammatory status, choise of HC or something else ?
-  
-  
-  - Eeva said
-  
-    -younger are more likely to get combination pills, they can used to treat acne and menstrual disorders and combination pill raise risk of venous thromboembolism
-  
-    -for progestine pills age should not matter
-    
-    -> so there is age affect but also possibly the age effect depends on the hc type
-    
-  -how about how long a product has been used? the longer you have used it the more time it has had to have an effect? and this also is dependent on age. Could Muriel give me some pointers on how to address it? Could it be a percentage of age or is an interaction better as the estimate really don't matter? Do we have the dates of when the products were ordered? Or should we do a survival analysis?
-  
--should we add a propensity score analysis with a score on how likely one is to use HC
-
--trial emulation?
 
 # Functions
 
