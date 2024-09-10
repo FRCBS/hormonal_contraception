@@ -1203,22 +1203,43 @@ g2 <-
   g1 %>%
   set_node_attrs(
     node_attr = fillcolor,
-    values = "#FA92B1", # this makes text white
-    nodes = c(1)) %>% 
-    set_node_attrs(
-    node_attr = fontcolor,
-    values = "black") %>% # this makes text white
-  set_node_attrs(
-    node_attr = fillcolor,
-    values = "#D0E69E", 
-    nodes = c(9)) %>% 
+    values = "#ED0000FF", # this makes text white 
+    nodes = c(1)) %>%  # outcome
     set_node_attrs(
     node_attr = fontcolor,
     values = "black") %>% 
   set_node_attrs(
     node_attr = fillcolor,
-    values = "#D0D8E9", 
-    nodes = c(2,3,4,5,6,7,8,10,11,12,13,14,15,16,17,18,19,20,21,22)) %>% 
+    values = "#42B540FF", 
+    nodes = c(9)) %>%  # exposure 
+    set_node_attrs(
+    node_attr = fontcolor,
+    values = "black") %>% 
+  set_node_attrs(
+    node_attr = fillcolor,
+    values = "#00468BFF", 
+    nodes = c(3,20)) %>%  # matching criteria 
+    set_node_attrs(
+    node_attr = fontcolor,
+    values = "black") %>% 
+  set_node_attrs(
+    node_attr = fillcolor,
+    values = "#0099B4FF", 
+    nodes = c(2,5,8,10,15,17,18,22)) %>%  # model adjustment 
+    set_node_attrs(
+    node_attr = fontcolor,
+    values = "black") %>% 
+  set_node_attrs(
+    node_attr = fillcolor,
+    values = "#925E9FFF", 
+    nodes = c(11,12,13,14)) %>%   # latents (latent variables represent underlying constructs we can't quantify) 
+    set_node_attrs(
+    node_attr = fontcolor,
+    values = "black") %>% 
+  set_node_attrs(
+    node_attr = fillcolor,
+    values = "#FDAF91FF", 
+    nodes = c(4,6,16,19,21)) %>%   # unobserved (unobserved variables can't be captured due to practical limitations) 
     set_node_attrs(
     node_attr = fontcolor,
     values = "black") 
@@ -1230,6 +1251,8 @@ render_graph(
 )
 
 ```
+
+
 
 ```{r}
 get_edge_df(g2)
@@ -1319,3 +1342,5 @@ Education level
 ## Matching
 - Age 
 - Place of residence 
+
+
