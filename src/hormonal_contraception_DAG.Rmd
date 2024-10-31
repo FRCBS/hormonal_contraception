@@ -931,7 +931,7 @@ HC_DAG_fin <- ggdag::dagify(
   Mens ~ HC,
   A ~ InLoss,  # Gastrointestinal blood loss is the most important cause of ID in men and postmenopausal women
   InLoss ~ IBD, # IBD causes GI blood loss
-#  Iinfl ~ IBD, # IBD causes inflammation
+  Iinfl ~ IBD, # IBD causes inflammation
   Iinfl ~ Ob,
 #  InMyc ~ IBD, # IBD causes intestinal dysfunction (through inflammation?)
 #  InMyc ~ GBP, # gastric bypass, particularly Roux-en-Y, causes food to bypass duodenum.  
