@@ -1,0 +1,2823 @@
+---
+title: "Hormonal contraception and anemia project"
+author: "Sofie Ekroos"
+date: "`r Sys.Date()`"
+output: 
+  html_document: default
+  pdf_document: default
+---
+
+Based on original code by Jari Haukka (modelsAnemiaResults.R), this Rmd can be used to explore data further without changing the original code.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggplot2)
+library(tibble)
+library(dplyr)
+library(knitr)
+library(ggsci)
+library(cowplot)
+library(survminer)
+library(cohorttools)
+library(survival)
+library(Epi)
+```
+
+# Setup and data loading
+
+Data made and models run on 21082024.
+
+```{r}
+load(file = "W:/Veripalvelu/sofie/anemia_and_hc/results/models/anemia.m0.Rdata")
+load(file = "W:/Veripalvelu/sofie/anemia_and_hc/results/models/anemia.m1.Rdata")
+load(file = "W:/Veripalvelu/sofie/anemia_and_hc/results/models/anemia.m2.Rdata")
+load(file = "W:/Veripalvelu/sofie/anemia_and_hc/results/models/anemia.m3.Rdata")
+load(file = "W:/Veripalvelu/mikko/anemia_and_hc/out20240821/tempdata20240515.Rdata")
+load("W:/UpdateData/HCpurchV2021.RData") # 2018 and after, use this 
+
+```
+
+```{r}
+# replace 999999 observations with <5
+NCCm0 <- anemia.m0
+NCCm1 <- anemia.m1
+NCCm2 <- anemia.m2
+NCCm3 <- anemia.m3
+
+
+NCCm0$N.case[NCCm0$N.case >= 999999] <- "<5"
+NCCm0$N.control[NCCm0$N.control >= 999999] <- "<5"
+
+NCCm1$N.case[NCCm1$N.case >= 999999] <- "<5"
+NCCm1$N.control[NCCm1$N.control >= 999999] <- "<5"
+
+NCCm2$N.case[NCCm2$N.case >= 999999] <- "<5"
+NCCm2$N.control[NCCm2$N.control >= 999999] <- "<5"
+
+NCCm3$N.case[NCCm3$N.case >= 999999] <- "<5"
+NCCm3$N.control[NCCm3$N.control >= 999999] <- "<5"
+```
+
+
+
+# Data and Methods
+
+We started with study population described elsewhere (Toffol et al.).
+
+Follow-up started on 01-01-2018 and censoring date was 31-12-2019, death was also used as censoring event.
+Endpoint event was first occurrence of anemia defined by ICD-10 code "D50" or ICPC code "B80".
+We excluded individuals with anemia before start of follow-up (SOF) in last five years.
+
+Data sources were Care Register for Health (HILMO) and Register for Primary Health Care Visits (AvoHILMO).
+
+```{r,results='markup',warning=FALSE,message=FALSE,fig.cap="Flowchart of incidence"}
+load(file = "W:/Veripalvelu/mikko/anemia_and_hc/out20240813/anemiaincidencedata.RData")
+
+DiagrammeR::grViz(apu$flow)
+```
+
+
+
+```{r}
+tmp.atc.EE<-c("G03AA07", "G02BB01","G03AA09","G03AA10", "G03AA11", "G03AA12", "G03AA13",
+              "G03AA16","G03AB03","G03AB05", "G03AB06")
+tmp.atc.estradiaol<-c("G03AA14", "G03AB08","G03HB01")
+tmp.atc.progestine<-c("G03AC01","G03AC03","G03AC08","G03AC09","G03AC10")
+```
+
+We determined the following covariates in SOF: region of residence,
+marital status, education and sosio-economic status.
+
+Based on incidence data we constructed nested case-control (NCC) design with five controls, 
+matching by  year of birth (same year) and region.
+
+For NCC we defined the following variables: indicator for giving birth in one year before event,
+indicator for abortion in one year before event and any cancer in five years before event.
+
+We constructed HC exposure variables based on redeemed prescription data
+using two time windows before event (one year and half year).
+
+We define HC exposures as follow:
+
+* Any HC exposure (`.i.any.HC`, 0/1): at least two redeemed prescriptions of any HC in time window
+* For each ATC (0/1) : at least two redeemed prescriptions of specific ATC in time window
+* HC exposure group (`HC.group`, "no","EE","estradiol","progestine"): determined by the most frequent ATC
+  + EE: `r paste(tmp.atc.EE,collapse = ", ") `
+  + estradiol: `r paste(tmp.atc.estradiaol,collapse = ", ")`
+  + progestine: `r paste(tmp.atc.progestine,collapse = ", ")`
+
+
+
+## Statistical methods
+
+
+Nested case-control data was analysed using conditional logistic regression that
+takes into account matching. Results are reported as odds-ratios with 95% confidence interval.
+
+
+
+# Results
+
+## Incidence of anemia
+
+Kaplan-Meider Curves visually represent the cumulative survival probability over time.
+
+Add information on anemia diagnosis to the original study population.
+
+```{r}
+# add column for duration since SOF
+apu.dt_dur <- apu.dt
+
+
+# add failure event (anemia)
+apu.dt_dur <- apu.dt_dur %>% 
+  mutate(anemia_dg = if_else(!is.na(ICPC2) | !is.na(hilmo.ICD10) | !is.na(avohilmo.ICD10), TRUE, FALSE))
+
+# only incidence
+apu.dt_dur<- apu.dt_dur %>%  
+  mutate(fail = if_else(anemia_dg == TRUE & .i.prevalent == FALSE, TRUE, FALSE))
+
+# remove prevalent cases
+apu.dt_dur<- apu.dt_dur %>%  
+  filter(.i.prevalent == FALSE)
+
+# add variable for duration
+apu.dt_dur <- apu.dt_dur %>% 
+  mutate(duration = if_else(
+    fail == TRUE, first.event.pvm.noise - 2019, 1.999999999)) 
+
+```
+
+
+Add information on hormonal contraception use to the original study population.
+
+
+```{r}
+df <- HC.purch.V2021
+
+# filter atc codes for study period
+df %>%  filter(toim.pvm>=2019 & toim.date<2021)
+
+# group by shnro and atc, and count occurances
+grouped <- df %>%  group_by(shnro, atc) %>%  summarise(count=n())
+
+# filter HC atc codes and require more than 1 purchase (>0 for IUDs and implants)
+filtered <- grouped %>% filter((grepl('^G02B|^G03A, ^G03HB', atc) &
+                                  !atc %in% c('G03AC03', 'G03AC08','G02BA03') & 
+                                  count < 1) |
+                                 (atc %in% c('G03AC03', 'G03AC08','G02BA03') &
+                                    count > 0))
+
+# create new column for HC use
+filtered <- filtered %>%  mutate(HC = TRUE)
+
+# reduce to one row per shnro
+HC_purch <- filtered %>%  select(shnro, HC) %>% distinct()
+
+# save shnros
+tmp.shnro <- HC_purch$shnro
+
+
+# add column to apu.dt_dur
+apu.dt_dur <- apu.dt_dur %>%  mutate(HC = ifelse(shnro %in% tmp.shnro, "yes", "no"))
+```
+
+Next we remove women who were pregnant during follow-up
+
+```{r}
+# load data
+## Deliveries 1987-2022
+load("W:/UpdateData/rawdeliv202311V2.RData")
+## Abortions 1987-2022
+load(file="w:/UpdateData/rawab202311V2.RData")
+
+
+raw.ab.2023.11.V2$preg.start<-with(raw.ab.2023.11.V2,TOIMENPIDE_PVM.pvm- (RASK_KESTO_PV+  RASK_KESTO_VK*7)/365.26)
+
+tmp.poistetaan<-with(raw.ab.2023.11.V2,data.frame(shnro=shnro,alku=preg.start,loppu=TOIMENPIDE_PVM.pvm))
+tmp.poistetaan<-with(raw.deliv.2023.11.V2,rbind(tmp.poistetaan,data.frame(shnro=shnro,alku=synnytyksen_pvm.pvm-9/12,loppu=synnytyksen_pvm.pvm)))
+tmp.poistetaan<-subset(tmp.poistetaan,!is.na(alku)&!is.na(loppu)&(shnro%in%apu.CC$shnro))
+tmp.poistetaan<-subset(tmp.poistetaan,loppu>2018)
+
+tmp.poistetaan<-tmp.poistetaan[order(tmp.poistetaan$shnro,tmp.poistetaan$alku),]
+apu.pois<-tapply(tmp.poistetaan$alku,tmp.poistetaan$shnro,function(x){seq(length(x))})
+apu.pois.1<-do.call(what="c",apu.pois)
+
+# First remove cases who were pregnant in one before EOF
+apu.pois.lista<-vector(mode="list",length=length(unique(apu.pois.1)))
+for(tmp.i in seq(apu.pois.lista)){
+  apu.1<-merge(x=apu.CC,y=tmp.poistetaan[apu.pois.1==tmp.i,],by="shnro")
+  apu.pois.lista[[tmp.i]]<-as.character(subset(apu.1,(Fail==1)&(alku<Time)&(loppu>Time))$shnro)
+}
+apu.pois.lista.1<-unique(unlist(apu.pois.lista))
+
+apu.dt_dur <- apu.dt_dur %>%  mutate(preg = ifelse(shnro %in% apu.pois.lista.1, "yes", "no"))
+
+
+
+
+apu.dt_dur <- apu.dt_dur %>% 
+  filter(preg != "yes")
+
+```
+
+
+```{r, message=FALSE, warning=FALSE, results='asis'}
+ 
+tmp.tab<-mkratetable(Surv(duration, fail) ~ ututkuR, 
+                     data = apu.dt_dur, 
+                     add.RR = TRUE,scale=1000,lowest.N = 5)
+knitr::kable(tmp.tab,caption="Incidence of anaemia (1/1000)",digits = 3)
+```
+
+```{r}
+apu.dt_dur %>% group_by(fail) %>% count() %>% arrange(desc(n))
+```
+
+
+```{r}
+require("survival")
+
+fit <- survfit(Surv(duration, fail) ~ HC, data = apu.dt_dur)
+
+p <- ggsurvplot(
+  fit,
+  data=apu.dt_dur,
+  size = 1,
+  pval =TRUE,
+  conf.int = TRUE,
+  tables.height = 0.2,
+  tables.theme = theme_cleantable(),
+  xlab = "Time",
+  ylab = "Survival probability",
+ # title = "Kaplan-Meier Survival Plot by hormonal contraceptive group",
+  ggtheme = theme_bw(),
+  censor=FALSE, 
+  ylim =c(0.99,1),
+  xlim =c(0,2)
+ )
+p
+
+```
+
+
+
+## Nested case-control results
+
+
+```{r,results='markup',warning=FALSE,message=FALSE}
+
+knitr::kable(NCCm0,digits=2,
+             caption="NCC odds ratios. Only matching taken into account. Frequencies under 5 not shown.")
+
+
+knitr::kable(NCCm1,digits=2,
+             caption="NCC odds ratios. Matching taken into account and adjusted with sosio-economic status. Frequencies under 5 not shown.")
+
+
+knitr::kable(NCCm2,digits=2,
+             caption="NCC odds ratios. Matching taken into account and adjusted with sosio-economic status and chronic disease. Frequencies under 5 not shown.")
+
+ knitr::kable(NCCm3,digits=2,
+              caption="NCC odds ratios. Matching taken into account and adjusted with sosio-economic status, chronic disease and heavy menstrual bleeding. Frequencies under 5 not shown.")
+
+```
+
+### Join tables
+
+```{r}
+# rename OR columns for NCCm3
+names(NCCm3)[names(NCCm3) == "OR"] <- "aOR"
+names(NCCm3)[names(NCCm3) == "OR.hi"] <- "aOR.hi"
+names(NCCm3)[names(NCCm3) == "OR.lo"] <- "aOR.lo"
+
+
+mergedTab <- NCCm0 %>% 
+  select( Level, N.control, N.case, OR, OR.hi, OR.lo) %>% 
+  left_join(NCCm3 %>% select(Level, aOR, aOR.hi, aOR.lo), by = "Level")
+```
+
+
+```{r,results='markup',warning=FALSE,message=FALSE}
+
+knitr::kable(mergedTab,digits=2)
+
+
+
+```
+
+
+```{r}
+write.csv(mergedTab, "W:/Veripalvelu/sofie/anemia_and_hc/results/models/NCCresults.csv", row.names = FALSE)
+```
+
+# Preparation
+
+## Temporary data frames for modelling
+
+```{r}
+m0 <- anemia.m0
+m1 <- anemia.m1
+m2 <- anemia.m2
+m3 <- anemia.m3
+```
+
+## HC grouping
+
+
+```{r}
+
+
+hh <- c("HormonalContraception (HormonalContraception)" = "HormonalContraception",
+        "Classification (Classification)" = "Classification")
+
+tmp.atc.classification <- tibble(Var=names(hh),class=hh)
+
+# join with anemia models and keep the HC.group levels
+## m0
+m0 <- tmp.atc.classification %>% 
+  inner_join(m0, by = "Var")  
+
+m0 <- m0 %>% 
+  mutate(class = case_when(
+    Level == "no" ~ "No hormonal contraception", 
+    Level == "implant" ~ "Contraceptive implant", 
+    Level == "IUD" ~ "Hormonal intrauterine device", 
+    Level == "COC_EE" ~ "Combined oral contraceptives, EE",
+    Level == "COC_E2" ~ "Combined oral contraceptives, E2", 
+    Level == "POC" ~ "Progestin-only oral contraceptives",
+    Level == "ring" ~ "Vaginal ring", 
+    Level == "patch" ~ "Contraceptive patch",
+    Level == "G02BA03" ~ "Hormonal intrauterine device",
+    Level == "G02BB01" ~ "Vaginal ring",
+    Level == "G03AA07" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA09" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA10" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA12" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA16" ~ "Combined oral contraceptives, EE",
+    Level == "G03AB03" ~ "Combined oral contraceptives, EE",
+    Level == "G03HB01" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA13" ~ "Contraceptive patch",
+    Level == "G03AB08" ~ "Combined oral contraceptives, E2",
+    Level == "G03AA14" ~ "Combined oral contraceptives, E2",
+    Level == "G03AC01" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC09" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC10" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC03" ~ "Contraceptive implant",
+    Level == "G03AC08" ~ "Contraceptive implant"
+    #TRUE  ~ as.character(class)
+  ))
+
+## m1
+m1 <- tmp.atc.classification %>% 
+  inner_join(m1, by = "Var")
+
+m1 <- m1 %>% 
+  mutate(class = case_when(
+    Level == "no" ~ "No hormonal contraception", 
+    Level == "implant" ~ "Contraceptive implant", 
+    Level == "IUD" ~ "Hormonal intrauterine device", 
+    Level == "COC_EE" ~ "Combined oral contraceptives, EE",
+    Level == "COC_E2" ~ "Combined oral contraceptives, E2", 
+    Level == "POC" ~ "Progestin-only oral contraceptives",
+    Level == "ring" ~ "Vaginal ring", 
+    Level == "patch" ~ "Contraceptive patch",
+    Level == "G02BA03" ~ "Hormonal intrauterine device",
+    Level == "G02BB01" ~ "Vaginal ring",
+    Level == "G03AA07" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA09" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA10" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA12" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA16" ~ "Combined oral contraceptives, EE",
+    Level == "G03AB03" ~ "Combined oral contraceptives, EE",
+    Level == "G03HB01" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA13" ~ "Contraceptive patch",
+    Level == "G03AB08" ~ "Combined oral contraceptives, E2",
+    Level == "G03AA14" ~ "Combined oral contraceptives, E2",
+    Level == "G03AC01" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC09" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC10" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC03" ~ "Contraceptive implant",
+    Level == "G03AC08" ~ "Contraceptive implant"
+    #TRUE  ~ as.character(class)
+  ))
+
+## m2
+m2 <- tmp.atc.classification %>% 
+  inner_join(m2, by = "Var") 
+
+m2 <- m2 %>% 
+  mutate(class = case_when(
+    Level == "no" ~ "No hormonal contraception", 
+    Level == "implant" ~ "Contraceptive implant", 
+    Level == "IUD" ~ "Hormonal intrauterine device", 
+    Level == "COC_EE" ~ "Combined oral contraceptives, EE",
+    Level == "COC_E2" ~ "Combined oral contraceptives, E2", 
+    Level == "POC" ~ "Progestin-only oral contraceptives",
+    Level == "ring" ~ "Vaginal ring", 
+    Level == "patch" ~ "Contraceptive patch",
+    Level == "G02BA03" ~ "Hormonal intrauterine device",
+    Level == "G02BB01" ~ "Vaginal ring",
+    Level == "G03AA07" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA09" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA10" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA12" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA16" ~ "Combined oral contraceptives, EE",
+    Level == "G03AB03" ~ "Combined oral contraceptives, EE",
+    Level == "G03HB01" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA13" ~ "Contraceptive patch",
+    Level == "G03AB08" ~ "Combined oral contraceptives, E2",
+    Level == "G03AA14" ~ "Combined oral contraceptives, E2",
+    Level == "G03AC01" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC09" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC10" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC03" ~ "Contraceptive implant",
+    Level == "G03AC08" ~ "Contraceptive implant"
+    #TRUE  ~ as.character(class)
+  ))
+
+
+## m3
+m3 <- tmp.atc.classification %>% 
+  inner_join(m3, by = "Var") 
+
+m3 <- m3 %>% 
+  mutate(class = case_when(
+    Level == "no" ~ "No hormonal contraception", 
+    Level == "implant" ~ "Contraceptive implant", 
+    Level == "IUD" ~ "Hormonal intrauterine device", 
+    Level == "COC_EE" ~ "Combined oral contraceptives, EE",
+    Level == "COC_E2" ~ "Combined oral contraceptives, E2", 
+    Level == "POC" ~ "Progestin-only oral contraceptives",
+    Level == "ring" ~ "Vaginal ring", 
+    Level == "patch" ~ "Contraceptive patch",
+    Level == "G02BA03" ~ "Hormonal intrauterine device",
+    Level == "G02BB01" ~ "Vaginal ring",
+    Level == "G03AA07" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA09" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA10" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA12" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA16" ~ "Combined oral contraceptives, EE",
+    Level == "G03AB03" ~ "Combined oral contraceptives, EE",
+    Level == "G03HB01" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA13" ~ "Contraceptive patch",
+    Level == "G03AB08" ~ "Combined oral contraceptives, E2",
+    Level == "G03AA14" ~ "Combined oral contraceptives, E2",
+    Level == "G03AC01" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC09" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC10" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC03" ~ "Contraceptive implant",
+    Level == "G03AC08" ~ "Contraceptive implant"
+    #TRUE  ~ as.character(class)
+  ))
+
+
+```
+
+For the forest plot, we want to use the Var variable. Since the other variables are binary 0/1 except HC group and type (several levels), it messes up the plot. We will need to rename the Var observations to force the different levels to not overlap in the final figure. Additionally add a variable for model to be used later when combining the plots.
+
+
+```{r}
+# m0
+m0 <- m0 %>% 
+  mutate(Var = case_when(
+    Level == "no" ~ "GROUP: NO HORMONAL\nCONTRACEPTION", 
+    Level == "implant" ~ "GROUP: CONTRACEPTIVE IMPLANT", 
+    Level == "IUD" ~ "GROUP: HORMONAL\nINTRAUTERINE DEVICE", 
+    Level == "COC_EE" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE",
+    Level == "COC_E2" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", 
+    Level == "POC" ~ "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES",
+    Level == "ring" ~ "GROUP: VAGINAL RING", 
+    Level == "patch" ~ "GROUP: CONTRACEPTIVE PATCH",
+    Level == "G02BA03" ~ "Plastic IUD: levonorgestrel",
+    Level == "G02BB01" ~ "Vaginal ring: etonogestrel and ethinylestradiol",
+    Level == "G03AA07" ~ "Levonorgestrel and\nethinylestradiol, fixed",
+    Level == "G03AA09" ~ "Desogestrel\nand ethinylestradiol",
+    Level == "G03AA10" ~ "Gestodene and\nethinylestradiol",
+    Level == "G03AA12" ~ "Drospirenone\nand ethinylestradiol",
+    Level == "G03AA13" ~ "Patch: norelgestromin and ethinylestradiol",
+    Level == "G03AA14" ~ "Nomegestrol\nand estradiol",
+    Level == "G03AA16" ~ "Dienogest and\nethinylestradiol",
+    Level == "G03AB03" ~ "Levonorgestrel and\nethinylestradiol, sequential",
+    Level == "G03AB08" ~ "Dienogest and\nestradiol",
+    Level == "G03AC01" ~ "Norethisterone",
+    Level == "G03AC03" ~ "Levonorgestrel",
+    Level == "G03AC08" ~ "Etonogestrel",
+    Level == "G03AC09" ~ "Desogestrel",
+    Level == "G03AC10" ~ "Drospirenone",
+    Level == "G03HB01" ~ "Cyproterone\nand ethinylestradiol",
+    TRUE  ~ as.character(Var)
+  ))  %>% 
+  mutate(Model = "m0")
+
+# m1
+m1 <- m1 %>% 
+  mutate(Var = case_when(
+    Level == "no" ~ "GROUP: NO HORMONAL\nCONTRACEPTION", 
+    Level == "implant" ~ "GROUP: CONTRACEPTIVE IMPLANT", 
+    Level == "IUD" ~ "GROUP: HORMONAL\nINTRAUTERINE DEVICE", 
+    Level == "COC_EE" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE",
+    Level == "COC_E2" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", 
+    Level == "POC" ~ "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES",
+    Level == "ring" ~ "GROUP: VAGINAL RING", 
+    Level == "patch" ~ "GROUP: CONTRACEPTIVE PATCH",
+    Level == "G02BA03" ~ "Plastic IUD: levonorgestrel",
+    Level == "G02BB01" ~ "Vaginal ring: etonogestrel and ethinylestradiol",
+    Level == "G03AA07" ~ "Levonorgestrel and\nethinylestradiol, fixed",
+    Level == "G03AA09" ~ "Desogestrel\nand ethinylestradiol",
+    Level == "G03AA10" ~ "Gestodene and\nethinylestradiol",
+    Level == "G03AA12" ~ "Drospirenone\nand ethinylestradiol",
+    Level == "G03AA13" ~ "Patch: norelgestromin and ethinylestradiol",
+    Level == "G03AA14" ~ "Nomegestrol\nand estradiol",
+    Level == "G03AA16" ~ "Dienogest and\nethinylestradiol",
+    Level == "G03AB03" ~ "Levonorgestrel and\nethinylestradiol, sequential",
+    Level == "G03AB08" ~ "Dienogest and\nestradiol",
+    Level == "G03AC01" ~ "Norethisterone",
+    Level == "G03AC03" ~ "Levonorgestrel",
+    Level == "G03AC08" ~ "Etonogestrel",
+    Level == "G03AC09" ~ "Desogestrel",
+    Level == "G03AC10" ~ "Drospirenone",
+    Level == "G03HB01" ~ "Cyproterone\nand ethinylestradiol",
+    TRUE  ~ as.character(Var)
+  )) %>% 
+  mutate(Model = "m1")
+
+
+# m2
+m2 <- m2 %>% 
+  mutate(Var = case_when(
+    Level == "no" ~ "GROUP: NO HORMONAL\nCONTRACEPTION", 
+    Level == "implant" ~ "GROUP: CONTRACEPTIVE IMPLANT", 
+    Level == "IUD" ~ "GROUP: HORMONAL\nINTRAUTERINE DEVICE", 
+    Level == "COC_EE" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE",
+    Level == "COC_E2" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", 
+    Level == "POC" ~ "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES",
+    Level == "ring" ~ "GROUP: VAGINAL RING", 
+    Level == "patch" ~ "GROUP: CONTRACEPTIVE PATCH",
+    Level == "G02BA03" ~ "Plastic IUD: levonorgestrel",
+    Level == "G02BB01" ~ "Vaginal ring: etonogestrel and ethinylestradiol",
+    Level == "G03AA07" ~ "Levonorgestrel and\nethinylestradiol, fixed",
+    Level == "G03AA09" ~ "Desogestrel\nand ethinylestradiol",
+    Level == "G03AA10" ~ "Gestodene and\nethinylestradiol",
+    Level == "G03AA12" ~ "Drospirenone\nand ethinylestradiol",
+    Level == "G03AA13" ~ "Patch: norelgestromin and ethinylestradiol",
+    Level == "G03AA14" ~ "Nomegestrol\nand estradiol",
+    Level == "G03AA16" ~ "Dienogest and\nethinylestradiol",
+    Level == "G03AB03" ~ "Levonorgestrel and\nethinylestradiol, sequential",
+    Level == "G03AB08" ~ "Dienogest and\nestradiol",
+    Level == "G03AC01" ~ "Norethisterone",
+    Level == "G03AC03" ~ "Levonorgestrel",
+    Level == "G03AC08" ~ "Etonogestrel",
+    Level == "G03AC09" ~ "Desogestrel",
+    Level == "G03AC10" ~ "Drospirenone",
+    Level == "G03HB01" ~ "Cyproterone\nand ethinylestradiol",
+    TRUE  ~ as.character(Var)
+  )) %>% 
+  mutate(Model = "m2")
+
+
+
+# m3
+m3 <- m3 %>% 
+  mutate(Var = case_when(
+    Level == "no" ~ "GROUP: NO HORMONAL\nCONTRACEPTION", 
+    Level == "implant" ~ "GROUP: CONTRACEPTIVE IMPLANT", 
+    Level == "IUD" ~ "GROUP: HORMONAL\nINTRAUTERINE DEVICE", 
+    Level == "COC_EE" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE",
+    Level == "COC_E2" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", 
+    Level == "POC" ~ "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES",
+    Level == "ring" ~ "GROUP: VAGINAL RING", 
+    Level == "patch" ~ "GROUP: CONTRACEPTIVE PATCH",
+    Level == "G02BA03" ~ "Plastic IUD: levonorgestrel",
+    Level == "G02BB01" ~ "Vaginal ring: etonogestrel and ethinylestradiol",
+    Level == "G03AA07" ~ "Levonorgestrel and\nethinylestradiol, fixed",
+    Level == "G03AA09" ~ "Desogestrel\nand ethinylestradiol",
+    Level == "G03AA10" ~ "Gestodene and\nethinylestradiol",
+    Level == "G03AA12" ~ "Drospirenone\nand ethinylestradiol",
+    Level == "G03AA13" ~ "Patch: norelgestromin and ethinylestradiol",
+    Level == "G03AA14" ~ "Nomegestrol\nand estradiol",
+    Level == "G03AA16" ~ "Dienogest and\nethinylestradiol",
+    Level == "G03AB03" ~ "Levonorgestrel and\nethinylestradiol, sequential",
+    Level == "G03AB08" ~ "Dienogest and\nestradiol",
+    Level == "G03AC01" ~ "Norethisterone",
+    Level == "G03AC03" ~ "Levonorgestrel",
+    Level == "G03AC08" ~ "Etonogestrel",
+    Level == "G03AC09" ~ "Desogestrel",
+    Level == "G03AC10" ~ "Drospirenone",
+    Level == "G03HB01" ~ "Cyproterone\nand ethinylestradiol",
+    TRUE  ~ as.character(Var)
+  )) %>% 
+  mutate(Model = "m3")
+
+
+```
+
+
+## Count of HC use
+
+```{r}
+# sum of cases and controls
+m0 <- m0 %>% 
+  mutate(n = N.case + N.control)
+
+m1 <- m1 %>% 
+  mutate(n = N.case + N.control)
+
+m2 <- m2 %>% 
+  mutate(n = N.case + N.control)
+
+m3 <- m3 %>% 
+  mutate(n = N.case + N.control)
+
+```
+
+```{r}
+# replace 999999 observations with <5
+m0$n[m0$n >= 999999] <- "<5"
+m1$n[m1$n >= 999999] <- "<5"
+m2$n[m2$n >= 999999] <- "<5"
+m3$n[m3$n >= 999999] <- "<5"
+
+
+```
+
+
+## Shape for effect sizes
+
+```{r}
+# add a variable to use for changing shape of the effect size estimates
+m0 <- m0 %>% 
+  mutate(shape = case_when(
+    Var == "Classification (Classification)" ~ "Classification", 
+    Var == "HormonalContraception (HormonalContraception)" ~ "Current hormonal contraception",
+    TRUE  ~ "ATC code"
+  ))
+
+m1 <- m1 %>% 
+  mutate(shape = case_when(
+    Var == "Classification (Classification)" ~ "Classification", 
+    Var == "HormonalContraception (HormonalContraception)" ~ "Current hormonal contraception",
+  ))
+
+m2 <- m2 %>% 
+  mutate(shape = case_when(
+    Var == "Classification (Classification)" ~ "Classification", 
+    Var == "HormonalContraception (HormonalContraception)" ~ "Current hormonal contraception",
+  ))
+
+m3 <- m3 %>% 
+  mutate(shape = case_when(
+    Var == "Classification (Classification)" ~ "Classification", 
+    Var == "HormonalContraception (HormonalContraception)" ~ "Current hormonal contraception",
+  ))
+
+```
+
+# Forest plots
+
+## m0
+
+```{r, fig1, fig.height=10, fig.width=15, warning=FALSE}
+ tmp0 <- m0#[!m0$Level == 0, ] 
+
+
+# significant estimates marker
+tmp0 <- tmp0 %>% 
+  mutate(is.sig = OR.lo < 1 & OR.hi < 1 | OR.lo > 1 & OR.hi > 1 | OR.lo == 1 & OR.hi == 1)  %>% 
+  mutate(OR.hi = case_when(
+    OR.hi >2  ~  2,
+    TRUE  ~ OR.hi
+    )
+  )
+
+# order of forest plot
+tmp0 <- tmp0 %>% 
+  mutate(Var=factor(Var, levels=c("Levonorgestrel",  "ATC G03AC03",
+    "Etonogestrel",    "ATC G03AC08",
+    "GROUP: CONTRACEPTIVE IMPLANT",  # HC group: implant
+    "Patch: norelgestromin and ethinylestradiol",  "ATC G03AA13",
+    "GROUP: CONTRACEPTIVE PATCH",  # HC group: patch
+    "Vaginal ring: etonogestrel and ethinylestradiol", "ATC G02BB01",
+    "GROUP: VAGINAL RING", # HC group: vaginal ring
+    "Plastic IUD: levonorgestrel",  "ATC G02BA03",
+    "GROUP: HORMONAL\nINTRAUTERINE DEVICE", # HC group: IUD
+    "Drospirenone",  "ATC G03AC10",
+    "Desogestrel", "ATC G03AC09",
+    "Norethisterone", "ATC G03AC01",
+    "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES", # HC group: POC
+    "Dienogest and\nestradiol",  "ATC G03AB08",
+    "Nomegestrol\nand estradiol",  "ATC G03AA14",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", # HC group: E2-COC
+    "Cyproterone\nand ethinylestradiol",  "ATC G03HB01",
+    "Levonorgestrel and\nethinylestradiol, sequential", "ATC G03AB03",
+    "Dienogest and\nethinylestradiol",  "ATC G03AA16",
+    "Drospirenone\nand ethinylestradiol", "ATC G03AA12",
+    "Gestodene and\nethinylestradiol", "ATC G03AA10",
+    "Desogestrel\nand ethinylestradiol", "ATC G03AA09",
+    "Levonorgestrel and\nethinylestradiol, fixed",  "ATC G03AA07",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE", # HC group: EE-COC
+    "GROUP: NO HORMONAL\nCONTRACEPTION"  # HC group: none                       
+    )))
+
+# filter out unneccessary double rows (groups only containing one product and one of the no HC groups)
+
+tmp0 <- tmp0 %>% 
+  mutate(duplicate = case_when(
+    Var == "GROUP: HORMONAL\nINTRAUTERINE DEVICE" ~ 'yes',
+    Var == "GROUP: VAGINAL RING"  ~ 'yes',
+    Var == "GROUP: CONTRACEPTIVE PATCH" ~ 'yes',
+    TRUE ~ 'no'
+     )) 
+
+tmp0 <- tmp0 %>% 
+  filter(duplicate != "yes")
+
+
+
+p1 <-  ggplot(data=tmp0, aes(x = Var, y = OR)) + 
+  geom_point(
+    aes(shape = is.sig, 
+        color = class),
+    size = 4,
+    position = position_dodge(2)) +
+    scale_shape_manual(values=c(1,16)) +  
+  scale_color_lancet() +
+  geom_hline(yintercept = 1, lty = 3, 
+             size = 1) +
+  scale_y_continuous(limits = c(0,2)) +
+  coord_flip() +
+  geom_linerange(aes(ymin = OR.lo, ymax = OR.hi, color = class), position = position_dodge(2), size = 1) +
+#  geom_pointrange(aes(ymin = OR.lo, ymax = OR.hi), position = position_dodge(2), size = 1) +
+  theme(strip.background = element_rect(fill = "white"),
+        strip.background.x = element_blank()) +
+  theme_classic(base_size = 16) +
+  geom_label(aes(label=n, color = class, size = 2), nudge_x = 0.3,nudge_y = 0.1) +
+  theme(axis.title.y = element_blank(),
+        legend.position = "none") 
+
+p1
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/forest_plots/NCC.M0.pdf"
+ggsave(filename=filename, p1, width = 180, height = 200, units = "mm", dpi = 600, scale = 1.5)
+
+```
+
+## m1
+
+```{r, fig2, fig.height=10, fig.width=15, warning=FALSE}
+ tmp1 <- m1#[!m1$Level == 0, ] 
+
+# significant estimates marker
+tmp1 <- tmp1 %>% 
+  mutate(is.sig = OR.lo < 1 & OR.hi < 1 | OR.lo > 1 & OR.hi > 1 | OR.lo == 1 & OR.hi == 1) %>% 
+  mutate(OR.hi = case_when(
+    OR.hi >2  ~  2,
+    TRUE  ~ OR.hi
+    )
+  )
+
+tmp1 <- tmp1 %>% 
+  mutate(Var=factor(Var, levels=c("Levonorgestrel",  "ATC G03AC03",
+    "Etonogestrel",    "ATC G03AC08",
+    "GROUP: CONTRACEPTIVE IMPLANT",  # HC group: implant
+    "Patch: norelgestromin and ethinylestradiol",  "ATC G03AA13",
+    "GROUP: CONTRACEPTIVE PATCH",  # HC group: patch
+    "Vaginal ring: etonogestrel and ethinylestradiol", "ATC G02BB01",
+    "GROUP: VAGINAL RING", # HC group: vaginal ring
+    "Plastic IUD: levonorgestrel",  "ATC G02BA03",
+    "GROUP: HORMONAL\nINTRAUTERINE DEVICE", # HC group: IUD
+    "Drospirenone",  "ATC G03AC10",
+    "Desogestrel", "ATC G03AC09",
+    "Norethisterone", "ATC G03AC01",
+    "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES", # HC group: POC
+    "Dienogest and\nestradiol",  "ATC G03AB08",
+    "Nomegestrol\nand estradiol",  "ATC G03AA14",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", # HC group: E2-COC
+    "Cyproterone\nand ethinylestradiol",  "ATC G03HB01",
+    "Levonorgestrel and\nethinylestradiol, sequential", "ATC G03AB03",
+    "Dienogest and\nethinylestradiol",  "ATC G03AA16",
+    "Drospirenone\nand ethinylestradiol", "ATC G03AA12",
+    "Gestodene and\nethinylestradiol", "ATC G03AA10",
+    "Desogestrel\nand ethinylestradiol", "ATC G03AA09",
+    "Levonorgestrel and\nethinylestradiol, fixed",  "ATC G03AA07",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE", # HC group: EE-COC
+    "GROUP: NO HORMONAL\nCONTRACEPTION"  # HC group: none                       
+    )))
+
+# filter out unneccessary double rows (groups only containing one product and one of the no HC groups)
+
+tmp1 <- tmp1 %>% 
+  mutate(duplicate = case_when(
+    Var == "GROUP: HORMONAL\nINTRAUTERINE DEVICE" ~ 'yes',
+    Var == "GROUP: VAGINAL RING"  ~ 'yes',
+    Var == "GROUP: CONTRACEPTIVE PATCH" ~ 'yes',
+    TRUE ~ 'no'
+     )) 
+
+tmp1 <- tmp1 %>% 
+  filter(duplicate != "yes")
+
+# forest plot
+p2 <-  ggplot(data=tmp1, aes(x = Var, y = OR)) + 
+  geom_point(
+    aes(shape = is.sig, 
+        color = class),
+    size = 4,
+    position = position_dodge(2)) +
+    scale_shape_manual(values=c(1,16)) +  
+  scale_color_lancet() +
+  geom_hline(yintercept = 1, lty = 3, 
+             size = 1) +
+  scale_y_continuous(limits = c(0,2)) +
+  coord_flip() +
+  geom_linerange(aes(ymin = OR.lo, ymax = OR.hi, color = class), position = position_dodge(2), size = 1) +
+#  geom_pointrange(aes(ymin = OR.lo, ymax = OR.hi), position = position_dodge(2), size = 1) +
+  theme(strip.background = element_rect(fill = "white"),
+        strip.background.x = element_blank()) +
+  theme_classic(base_size = 16) +
+  geom_label(aes(label=n, color = class, size = 2), nudge_x = 0.3,nudge_y = 0.1) +
+  theme(axis.title.y = element_blank(),
+        legend.position = "none")
+p2 
+
+# save figure
+ filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/forest_plots/NCC.M1.pdf"
+ ggsave(filename=filename, p2, width = 180, height = 200, units = "mm", dpi = 600, scale = 1.5)
+```
+
+## m2
+
+```{r, fig3, fig.height=10, fig.width=15, warning=FALSE}
+
+ tmp2 <- m2#[!m2$Level == 0, ] 
+
+
+# significant estimates marker
+tmp2 <- tmp2 %>% 
+  mutate(is.sig = OR.lo < 1 & OR.hi < 1 | OR.lo > 1 & OR.hi > 1 | OR.lo == 1 & OR.hi == 1)  %>% 
+  mutate(OR.hi = case_when(
+    OR.hi >2  ~  2,
+    TRUE  ~ OR.hi
+    )
+  )
+
+tmp2 <- tmp2 %>% 
+  mutate(Var=factor(Var, levels=c("Levonorgestrel",  "ATC G03AC03",
+    "Etonogestrel",    "ATC G03AC08",
+    "GROUP: CONTRACEPTIVE IMPLANT",  # HC group: implant
+    "Patch: norelgestromin and ethinylestradiol",  "ATC G03AA13",
+    "GROUP: CONTRACEPTIVE PATCH",  # HC group: patch
+    "Vaginal ring: etonogestrel and ethinylestradiol", "ATC G02BB01",
+    "GROUP: VAGINAL RING", # HC group: vaginal ring
+    "Plastic IUD: levonorgestrel",  "ATC G02BA03",
+    "GROUP: HORMONAL\nINTRAUTERINE DEVICE", # HC group: IUD
+    "Drospirenone",  "ATC G03AC10",
+    "Desogestrel", "ATC G03AC09",
+    "Norethisterone", "ATC G03AC01",
+    "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES", # HC group: POC
+    "Dienogest and\nestradiol",  "ATC G03AB08",
+    "Nomegestrol\nand estradiol",  "ATC G03AA14",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", # HC group: E2-COC
+    "Cyproterone\nand ethinylestradiol",  "ATC G03HB01",
+    "Levonorgestrel and\nethinylestradiol, sequential", "ATC G03AB03",
+    "Dienogest and\nethinylestradiol",  "ATC G03AA16",
+    "Drospirenone\nand ethinylestradiol", "ATC G03AA12",
+    "Gestodene and\nethinylestradiol", "ATC G03AA10",
+    "Desogestrel\nand ethinylestradiol", "ATC G03AA09",
+    "Levonorgestrel and\nethinylestradiol, fixed",  "ATC G03AA07",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE", # HC group: EE-COC
+    "GROUP: NO HORMONAL\nCONTRACEPTION"  # HC group: none                       
+    )))
+
+# filter out unneccessary double rows (groups only containing one product and one of the no HC groups)
+
+tmp2 <- tmp2 %>% 
+  mutate(duplicate = case_when(
+    Var == "GROUP: HORMONAL\nINTRAUTERINE DEVICE" ~ 'yes',
+    Var == "GROUP: VAGINAL RING"  ~ 'yes',
+    Var == "GROUP: CONTRACEPTIVE PATCH" ~ 'yes',
+    TRUE ~ 'no'
+     )) 
+
+tmp2 <- tmp2 %>% 
+  filter(duplicate != "yes")
+
+p3 <-  ggplot(data=tmp2, aes(x = Var, y = OR)) + 
+  geom_point(
+    aes(shape = is.sig, 
+        color = class),
+    size = 4,
+    position = position_dodge(2)) +
+    scale_shape_manual(values=c(1,16)) +  
+  scale_color_lancet() +
+  geom_hline(yintercept = 1, lty = 3, 
+             size = 1) +
+  scale_y_continuous(limits = c(0,2)) +
+  coord_flip() +
+  geom_linerange(aes(ymin = OR.lo, ymax = OR.hi, color = class), position = position_dodge(2), size = 1) +
+#  geom_pointrange(aes(ymin = OR.lo, ymax = OR.hi), position = position_dodge(2), size = 1) +
+  theme(strip.background = element_rect(fill = "white"),
+        strip.background.x = element_blank()) +
+  theme_classic(base_size = 16) +
+ # ggtitle("NCC odds ratios, m0", subtitle = "Matching; Unadjusted") +
+  #geom_text(aes(x=y, y=x,label=n))+  
+  geom_label(aes(label=n, color = class, size = 2), nudge_x = 0.3,nudge_y = 0.1) +
+  theme(axis.title.y = element_blank(),
+        legend.position = "none")
+p3
+
+
+
+# save figure
+ filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/forest_plots/NCC.M2.pdf"
+ ggsave(filename=filename, p3, width = 180, height = 200, units = "mm", dpi = 600, scale = 1.5)
+
+```
+
+## m3
+
+```{r, fig4, fig.height=10, fig.width=15, warning=FALSE}
+
+ tmp3 <- m3#[!m2$Level == 0, ] 
+
+
+# significant estimates marker
+tmp3 <- tmp3 %>% 
+  mutate(is.sig = OR.lo < 1 & OR.hi < 1 | OR.lo > 1 & OR.hi > 1 | OR.lo == 1 & OR.hi == 1)  %>% 
+  mutate(OR.hi = case_when(
+    OR.hi >2  ~  2,
+    TRUE  ~ OR.hi
+    )
+  )
+
+tmp3 <- tmp3 %>% 
+  mutate(Var=factor(Var, levels=c("Levonorgestrel",  "ATC G03AC03",
+    "Etonogestrel",    "ATC G03AC08",
+    "GROUP: CONTRACEPTIVE IMPLANT",  # HC group: implant
+    "Patch: norelgestromin and ethinylestradiol",  "ATC G03AA13",
+    "GROUP: CONTRACEPTIVE PATCH",  # HC group: patch
+    "Vaginal ring: etonogestrel and ethinylestradiol", "ATC G02BB01",
+    "GROUP: VAGINAL RING", # HC group: vaginal ring
+    "Plastic IUD: levonorgestrel",  "ATC G02BA03",
+    "GROUP: HORMONAL\nINTRAUTERINE DEVICE", # HC group: IUD
+    "Drospirenone",  "ATC G03AC10",
+    "Desogestrel", "ATC G03AC09",
+    "Norethisterone", "ATC G03AC01",
+    "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES", # HC group: POC
+    "Dienogest and\nestradiol",  "ATC G03AB08",
+    "Nomegestrol\nand estradiol",  "ATC G03AA14",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", # HC group: E2-COC
+    "Cyproterone\nand ethinylestradiol",  "ATC G03HB01",
+    "Levonorgestrel and\nethinylestradiol, sequential", "ATC G03AB03",
+    "Dienogest and\nethinylestradiol",  "ATC G03AA16",
+    "Drospirenone\nand ethinylestradiol", "ATC G03AA12",
+    "Gestodene and\nethinylestradiol", "ATC G03AA10",
+    "Desogestrel\nand ethinylestradiol", "ATC G03AA09",
+    "Levonorgestrel and\nethinylestradiol, fixed",  "ATC G03AA07",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE", # HC group: EE-COC
+    "GROUP: NO HORMONAL\nCONTRACEPTION"  # HC group: none                       
+    )))
+
+# filter out unneccessary double rows (groups only containing one product and one of the no HC groups)
+
+tmp3 <- tmp3 %>% 
+  mutate(duplicate = case_when(
+    Var == "GROUP: HORMONAL\nINTRAUTERINE DEVICE" ~ 'yes',
+    Var == "GROUP: VAGINAL RING"  ~ 'yes',
+    Var == "GROUP: CONTRACEPTIVE PATCH" ~ 'yes',
+    TRUE ~ 'no'
+     )) 
+
+tmp3 <- tmp3 %>% 
+  filter(duplicate != "yes")
+
+p4 <-  ggplot(data=tmp3, aes(x = Var, y = OR)) + 
+  geom_point(
+    aes(shape = is.sig, 
+        color = class),
+    size = 4,
+    position = position_dodge(2)) +
+    scale_shape_manual(values=c(1,16)) +  
+  scale_color_lancet() +
+  geom_hline(yintercept = 1, lty = 3, 
+             size = 1) +
+  scale_y_continuous(limits = c(0,2)) +
+  coord_flip() +
+  geom_linerange(aes(ymin = OR.lo, ymax = OR.hi, color = class), position = position_dodge(2), size = 1) +
+#  geom_pointrange(aes(ymin = OR.lo, ymax = OR.hi), position = position_dodge(2), size = 1) +
+  theme(strip.background = element_rect(fill = "white"),
+        strip.background.x = element_blank()) +
+  theme_classic(base_size = 16) +
+ # ggtitle("NCC odds ratios, m0", subtitle = "Matching; Unadjusted") +
+  #geom_text(aes(x=y, y=x,label=n))+  
+  geom_label(aes(label=n, color = class, size = 2), nudge_x = 0.3,nudge_y = 0.1) +
+  theme(axis.title.y = element_blank(),
+        legend.position = "none")
+p4
+
+
+
+# save figure
+ filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/forest_plots/NCC.M3.pdf"
+ ggsave(filename=filename, p4, width = 180, height = 200, units = "mm", dpi = 600, scale = 1.5)
+
+```
+
+## Figure 3
+
+```{r}
+m0m3_combined <- rbind(m0, m3)
+```
+
+
+```{r, fig5, fig.height=20, fig.width=15, warning=FALSE}
+
+ tmp4 <- m0m3_combined
+
+# significant estimates marker
+tmp4 <- tmp4 %>% 
+  mutate(is.sig = OR.lo < 1 & OR.hi < 1 | OR.lo > 1 & OR.hi > 1 | OR.lo == 1 & OR.hi == 1)  %>% 
+  mutate(OR.hi = case_when(
+    OR.hi >2  ~  4,
+    TRUE  ~ OR.hi
+    )
+  )
+
+tmp4 <- tmp4 %>% 
+  mutate(Var=factor(Var, levels=c("Levonorgestrel",  "ATC G03AC03",
+    "Etonogestrel",    "ATC G03AC08",
+    "GROUP: CONTRACEPTIVE IMPLANT",  # HC group: implant
+    "Patch: norelgestromin and ethinylestradiol",  "ATC G03AA13",
+    "GROUP: CONTRACEPTIVE PATCH",  # HC group: patch
+    "Vaginal ring: etonogestrel and ethinylestradiol", "ATC G02BB01",
+    "GROUP: VAGINAL RING", # HC group: vaginal ring
+    "Plastic IUD: levonorgestrel",  "ATC G02BA03",
+    "GROUP: HORMONAL\nINTRAUTERINE DEVICE", # HC group: IUD
+    "Drospirenone",  "ATC G03AC10",
+    "Desogestrel", "ATC G03AC09",
+    "Norethisterone", "ATC G03AC01",
+    "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES", # HC group: POC
+    "Dienogest and\nestradiol",  "ATC G03AB08",
+    "Nomegestrol\nand estradiol",  "ATC G03AA14",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", # HC group: E2-COC
+    "Cyproterone\nand ethinylestradiol",  "ATC G03HB01",
+    "Levonorgestrel and\nethinylestradiol, sequential", "ATC G03AB03",
+    "Dienogest and\nethinylestradiol",  "ATC G03AA16",
+    "Drospirenone\nand ethinylestradiol", "ATC G03AA12",
+    "Gestodene and\nethinylestradiol", "ATC G03AA10",
+    "Desogestrel\nand ethinylestradiol", "ATC G03AA09",
+    "Levonorgestrel and\nethinylestradiol, fixed",  "ATC G03AA07",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE", # HC group: EE-COC
+    "GROUP: NO HORMONAL\nCONTRACEPTION"  # HC group: none                       
+    )))
+
+# filter out unneccessary double rows (groups only containing one product and one of the no HC groups)
+
+tmp4 <- tmp4 %>% 
+  mutate(duplicate = case_when(
+    Var == "GROUP: NO HORMONAL\nCONTRACEPTION" & Model == "m3" ~ 'yes', # exclude the m3 version as m0 is used to print the label
+    Var == "GROUP: HORMONAL\nINTRAUTERINE DEVICE" ~ 'yes',
+    Var == "GROUP: VAGINAL RING"  ~ 'yes',
+    Var == "GROUP: CONTRACEPTIVE PATCH" ~ 'yes',
+    TRUE ~ 'no'
+     )) 
+
+tmp4 <- tmp4 %>% 
+  filter(duplicate != "yes")
+
+
+
+pos <- position_nudge(x=as.numeric(as.factor(tmp4$Model))/5 -0.1)
+
+p5 <-  ggplot(data=tmp4, aes(x = Var, y = OR)) + 
+  geom_point(
+    aes(shape = is.sig, 
+        color = class),
+    size = 4,
+    position = pos) +
+  scale_color_lancet() +
+    scale_shape_manual(values=c(1,16)) +
+  geom_hline(yintercept = 1, lty = 3, 
+             size = 1) +
+#  scale_y_continuous(limits = c(0,2)) +
+  scale_y_log10() +
+  coord_flip() +
+  geom_linerange(aes(ymin = OR.lo, ymax = OR.hi, color = class, linetype = Model), position = pos, size = 1) +
+  scale_linetype_manual(values = c("solid", "longdash")) + # solid line for m0, dashed line for m3
+  theme(strip.background = element_rect(fill = "white"),
+        strip.background.x = element_blank()) +
+  theme_classic(base_size = 16) +
+  geom_label(
+    data = filter(tmp4, Model == "m0"),
+      aes(label=n, 
+          color = class),
+    nudge_x = 0.5,
+    nudge_y = 0.1) +
+  theme(axis.title.y = element_blank(),
+        legend.position = "none")
+
+
+p5  
+
+
+
+
+
+# save figure
+  filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/forest_plots/Fig3.pdf"
+  ggsave(filename=filename, p5, width = 180, height = 240, units = "mm", dpi = 600, scale = 1.5)
+
+```
+
+## Figures for presentation
+
+### Figure 3 - only groups
+
+```{r}
+m0m3_present1 <- rbind(m0, m3)
+
+# filter only groups
+
+m0m3_present1 <- m0m3_present1 %>% 
+  mutate(group = case_when(
+    Var == "GROUP: CONTRACEPTIVE\nIMPLANT"  ~ 'yes', 
+    Var == "GROUP: CONTRACEPTIVE PATCH" ~ 'yes',
+    Var == "GROUP: VAGINAL RING"  ~ 'yes',
+    Var == "GROUP: CONTRACEPTIVE PATCH" ~ 'yes',
+    Var == "GROUP: HORMONAL\nINTRAUTERINE DEVICE" ~ 'yes',
+    Var == "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES"  ~ 'yes',
+    Var == "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2" ~ 'yes',
+    Var == "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE" ~ 'yes',
+    Var == "GROUP: NO HORMONAL\nCONTRACEPTION"  ~ 'yes',
+    TRUE ~ 'no'
+     )) 
+             
+    
+m0m3_present1 <- m0m3_present1 %>% 
+  filter(group == "yes")
+
+```
+
+
+```{r}
+# sum of cases and controls
+m0m3_present1 <- m0m3_present1 %>% 
+  mutate(n = N.case + N.control)
+
+# replace 999999 observations with <5
+m0m3_present1$n[m0m3_present1$n >= 999999] <- "<5"
+
+
+```
+
+
+```{r, fig6,  warning=FALSE}
+
+ tmp5 <- m0m3_present1
+
+# significant estimates marker
+tmp5 <- tmp5 %>% 
+  mutate(is.sig = OR.lo < 1 & OR.hi < 1 | OR.lo > 1 & OR.hi > 1 | OR.lo == 1 & OR.hi == 1)  %>% 
+  mutate(OR.hi = case_when(
+    OR.hi >2  ~  4,
+    TRUE  ~ OR.hi
+    )
+  )
+
+tmp5 <- tmp5 %>% 
+  mutate(Var=factor(Var, levels=c(
+    "GROUP: CONTRACEPTIVE\nIMPLANT",  # HC group: implant
+    "GROUP: CONTRACEPTIVE PATCH",  # HC group: patch
+    "GROUP: VAGINAL RING", # HC group: vaginal ring
+    "GROUP: HORMONAL\nINTRAUTERINE DEVICE", # HC group: IUD
+    "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES", # HC group: POC
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", # HC group: E2-COC
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE", # HC group: EE-COC
+    "GROUP: NO HORMONAL\nCONTRACEPTION"  # HC group: none                     
+    )))
+
+
+pos <- position_nudge(x=as.numeric(as.factor(tmp5$Model))/5 -0.1)
+
+# filter out unneccessary double rows (groups only containing one product and one of the no HC groups)
+
+tmp5 <- tmp5 %>% 
+  mutate(duplicate = case_when(
+    Var == "GROUP: NO HORMONAL\nCONTRACEPTION" & Model == "m3" ~ 'yes', # exclude the m3 version as m0 is used to print the label
+    TRUE ~ 'no'
+     )) 
+
+tmp5 <- tmp5 %>% 
+  filter(duplicate != "yes")
+
+p6 <-  ggplot(data=tmp5, aes(x = Var, y = OR)) + 
+  geom_point(
+    aes(shape = is.sig, 
+        color = class),
+    size = 4,
+    position = pos) +
+  scale_color_lancet() +
+    scale_shape_manual(values=c(1,16)) +
+  geom_hline(yintercept = 1, lty = 3, 
+             size = 1) +
+#  scale_y_continuous(limits = c(0,2)) +
+  scale_y_log10() +
+  coord_flip() +
+  geom_linerange(aes(ymin = OR.lo, ymax = OR.hi, color = class, linetype = Model), position = pos, size = 1) +
+  scale_linetype_manual(values = c("solid", "dashed")) + # solid line for m0, dashed line for m3
+  theme(strip.background = element_rect(fill = "white"),
+        strip.background.x = element_blank()) +
+  theme_classic(base_size = 16) +
+  geom_label(
+    data = filter(tmp5, Model == "m0"),
+      aes(label=n,
+          color = class),
+  nudge_x = 0.5,
+  nudge_y = 0.1) +
+  theme(axis.title.y = element_blank(),
+        legend.position = "none")
+
+
+p6  
+
+
+
+
+
+# save figure
+  filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/forest_plots/Fig3_pub.pdf"
+  ggsave(filename=filename, p6, width = 200, height = 100, units = "mm", dpi = 300, scale = 1.5)
+
+```
+### Figure 3 - products
+
+
+```{r}
+m0m3_present2 <- rbind(m0, m3)
+
+# filter only groups
+
+m0m3_present2 <- m0m3_present2 %>% 
+  mutate(group = case_when(
+    Var == "GROUP: CONTRACEPTIVE IMPLANT"  ~ 'yes', 
+    Var == "GROUP: CONTRACEPTIVE PATCH" ~ 'yes',
+    Var == "GROUP: VAGINAL RING"  ~ 'yes',
+    Var == "GROUP: CONTRACEPTIVE PATCH" ~ 'yes',
+    Var == "GROUP: HORMONAL\nINTRAUTERINE DEVICE" ~ 'yes',
+    Var == "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES"  ~ 'yes',
+    Var == "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2" ~ 'yes',
+    Var == "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE" ~ 'yes',
+    Var == "GROUP: NO HORMONAL\nCONTRACEPTION"  ~ 'no',
+    TRUE ~ 'no'
+     )) 
+             
+             
+    
+m0m3_present2 <- m0m3_present2 %>% 
+  filter(group == "no")
+
+```
+
+
+```{r}
+m0m3_present2 <- m0m3_present2 %>% 
+  mutate(Var = case_when(
+    Level == "no" ~ "GROUP: NO HORMONAL\nCONTRACEPTION", 
+    Level == "implant" ~ "GROUP: CONTRACEPTIVE IMPLANT", 
+    Level == "IUD" ~ "GROUP: HORMONAL\nINTRAUTERINE DEVICE", 
+    Level == "COC_EE" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE",
+    Level == "COC_E2" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", 
+    Level == "POC" ~ "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES",
+    Level == "ring" ~ "GROUP: VAGINAL RING", 
+    Level == "patch" ~ "GROUP: CONTRACEPTIVE PATCH",
+    Level == "G02BA03" ~ "Levonorgestrel\n(LNG-IUD)",
+    Level == "G02BB01" ~ "Etonogestrel and\nethinylestradiol",
+    Level == "G03AA07" ~ "Levonorgestrel and\nethinylestradiol, fixed",
+    Level == "G03AA09" ~ "Desogestrel and\nethinylestradiol",
+    Level == "G03AA10" ~ "Gestodene and\nethinylestradiol",
+    Level == "G03AA12" ~ "Drospirenone and\nethinylestradiol",
+    Level == "G03AA13" ~ "Norelgestromin and\nethinylestradiol",
+    Level == "G03AA14" ~ "Nomegestrol and\nestradiol",
+    Level == "G03AA16" ~ "Dienogest and\nethinylestradiol",
+    Level == "G03AB03" ~ "Levonorgestrel and\nethinylestradiol, sequential",
+    Level == "G03AB08" ~ "Dienogest and\nestradiol",
+    Level == "G03AC01" ~ "Norethisterone",
+    Level == "G03AC03" ~ "Levonorgestrel",
+    Level == "G03AC08" ~ "Etonogestrel",
+    Level == "G03AC09" ~ "Desogestrel",
+    Level == "G03AC10" ~ "Drospirenone",
+    Level == "G03HB01" ~ "Cyproterone and\nethinylestradiol",
+    TRUE  ~ as.character(Var)
+  )) 
+
+```
+
+
+
+```{r}
+# sum of cases and controls
+m0m3_present2 <- m0m3_present2 %>% 
+  mutate(n = N.case + N.control)
+
+# replace 999999 observations with <5
+m0m3_present2$n[m0m3_present2$n >= 999999] <- "<5"
+
+
+```
+
+
+```{r, fig7,  warning=FALSE}
+
+ tmp6 <- m0m3_present2
+
+# significant estimates marker
+tmp6 <- tmp6 %>% 
+  mutate(is.sig = OR.lo < 1 & OR.hi < 1 | OR.lo > 1 & OR.hi > 1 | OR.lo == 1 & OR.hi == 1)  %>% 
+  mutate(OR.hi = case_when(
+    OR.hi >2  ~  4,
+    TRUE  ~ OR.hi
+    )
+  )
+
+tmp6 <- tmp6 %>% 
+  mutate(Var=factor(Var, levels=c("Levonorgestrel",  "ATC G03AC03",
+    "Etonogestrel",    "ATC G03AC08",
+    "GROUP: CONTRACEPTIVE IMPLANT",  # HC group: implant
+    "Norelgestromin and\nethinylestradiol",  "ATC G03AA13",
+    "GROUP: CONTRACEPTIVE PATCH",  # HC group: patch
+    "Etonogestrel and\nethinylestradiol", "ATC G02BB01",
+    "GROUP: VAGINAL RING", # HC group: vaginal ring
+    "Levonorgestrel\n(LNG-IUD)",  "ATC G02BA03",
+    "GROUP: HORMONAL\nINTRAUTERINE DEVICE", # HC group: IUD
+    "Drospirenone",  "ATC G03AC10",
+    "Desogestrel", "ATC G03AC09",
+    "Norethisterone", "ATC G03AC01",
+    "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES", # HC group: POC
+    "Dienogest and\nestradiol",  "ATC G03AB08",
+    "Nomegestrol and\nestradiol",  "ATC G03AA14",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", # HC group: E2-COC
+    "Cyproterone and\nethinylestradiol",  "ATC G03HB01",
+    "Levonorgestrel and\nethinylestradiol, sequential", "ATC G03AB03",
+    "Dienogest and\nethinylestradiol",  "ATC G03AA16",
+    "Drospirenone and\nethinylestradiol", "ATC G03AA12",
+    "Gestodene and\nethinylestradiol", "ATC G03AA10",
+    "Desogestrel and\nethinylestradiol", "ATC G03AA09",
+    "Levonorgestrel and\nethinylestradiol, fixed",  "ATC G03AA07",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE", # HC group: EE-COC
+    "GROUP: NO HORMONAL\nCONTRACEPTION"  # HC group: none                       
+    )))
+
+
+pos <- position_nudge(x=as.numeric(as.factor(tmp6$Model))/5 -0.1)
+
+# # filter out unneccessary double rows (groups only containing one product and one of the no HC groups)
+# 
+tmp6 <- tmp6 %>%
+  mutate(duplicate = case_when(
+    Var == "GROUP: NO HORMONAL\nCONTRACEPTION" & Model == "m3" ~ 'yes', # exclude the m3 version as m0 is used to print the label
+    TRUE ~ 'no'
+     ))
+
+tmp6 <- tmp6 %>%
+  filter(duplicate != "yes")
+
+p7 <-  ggplot(data=tmp6, aes(x = Var, y = OR)) + 
+  geom_point(
+    aes(shape = is.sig, 
+        color = class),
+    size = 4,
+    position = pos) +
+  scale_color_lancet() +
+    scale_shape_manual(values=c(1,16)) +
+  geom_hline(yintercept = 1, lty = 3, 
+             size = 1) +
+#  scale_y_continuous(limits = c(0,2)) +
+  scale_y_log10() +
+  coord_flip() +
+  geom_linerange(aes(ymin = OR.lo, ymax = OR.hi, color = class, linetype = Model), position = pos, size = 1) +
+  scale_linetype_manual(values = c("solid", "dashed")) + # solid line for m0, dashed line for m3
+  theme(strip.background = element_rect(fill = "white"),
+        strip.background.x = element_blank()) +
+  theme_classic(base_size = 16) +
+  geom_label(
+    data = filter(tmp6, Model == "m0"),
+      aes(label=n,
+          color = class),
+  nudge_x = 0.5,
+  nudge_y = 0.1) +
+  theme(axis.title.y = element_blank(),
+        legend.position = "none")
+
+
+p7  
+
+
+
+
+
+# save figure
+  filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/forest_plots/Fig3_prod_pub.pdf"
+  ggsave(filename=filename, p7, width = 200, height = 150, units = "mm", dpi = 300, scale = 1.5)
+
+```
+
+
+### All models
+
+```{r}
+m0m3_present3 <- rbind(m0, m1, m2, m3)
+
+# filter only groups
+
+m0m3_present3 <- m0m3_present3 %>% 
+  mutate(group = case_when(
+    Var == "GROUP: CONTRACEPTIVE\nIMPLANT"  ~ 'yes', 
+    Var == "GROUP: CONTRACEPTIVE PATCH" ~ 'yes',
+    Var == "GROUP: VAGINAL RING"  ~ 'yes',
+    Var == "GROUP: CONTRACEPTIVE PATCH" ~ 'yes',
+    Var == "GROUP: HORMONAL\nINTRAUTERINE DEVICE" ~ 'yes',
+    Var == "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES"  ~ 'yes',
+    Var == "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2" ~ 'yes',
+    Var == "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE" ~ 'yes',
+    Var == "GROUP: NO HORMONAL\nCONTRACEPTION"  ~ 'yes',
+    TRUE ~ 'no'
+     )) 
+             
+    
+m0m3_present3 <- m0m3_present3 %>% 
+  filter(group == "yes")
+
+```
+
+
+```{r}
+# sum of cases and controls
+m0m3_present3 <- m0m3_present3 %>% 
+  mutate(n = N.case + N.control)
+
+# replace 999999 observations with <5
+m0m3_present3$n[m0m3_present3$n >= 999999] <- "<5"
+
+
+```
+
+
+```{r, fig8,  warning=FALSE}
+
+ tmp7 <- m0m3_present3
+
+# significant estimates marker
+tmp7 <- tmp7 %>% 
+  mutate(is.sig = OR.lo < 1 & OR.hi < 1 | OR.lo > 1 & OR.hi > 1 | OR.lo == 1 & OR.hi == 1)  %>% 
+  mutate(OR.hi = case_when(
+    OR.hi >2  ~  4,
+    TRUE  ~ OR.hi
+    )
+  )
+
+tmp7 <- tmp7 %>% 
+  mutate(Var=factor(Var, levels=c(
+    "GROUP: CONTRACEPTIVE\nIMPLANT",  # HC group: implant
+    "GROUP: CONTRACEPTIVE PATCH",  # HC group: patch
+    "GROUP: VAGINAL RING", # HC group: vaginal ring
+    "GROUP: HORMONAL\nINTRAUTERINE DEVICE", # HC group: IUD
+    "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES", # HC group: POC
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", # HC group: E2-COC
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE", # HC group: EE-COC
+    "GROUP: NO HORMONAL\nCONTRACEPTION"  # HC group: none                     
+    )))
+
+
+pos <- position_nudge(x=as.numeric(as.factor(tmp7$Model))/5 -0.1)
+
+# # filter out unneccessary double rows (groups only containing one product and one of the no HC groups)
+# 
+# tmp7 <- tmp7 %>% 
+#   mutate(duplicate = case_when(
+#     Var == "GROUP: NO HORMONAL\nCONTRACEPTION" & Model == "m3" ~ 'yes', 
+#     Var == "GROUP: NO HORMONAL\nCONTRACEPTION" & Model == "m2" ~ 'yes', 
+#     Var == "GROUP: NO HORMONAL\nCONTRACEPTION" & Model == "m1" ~ 'yes', 
+#     TRUE ~ 'no'
+#      )) 
+# 
+# tmp7 <- tmp7 %>% 
+#   filter(duplicate != "yes")
+
+p8 <-  ggplot(data=tmp7, aes(x = Var, y = OR)) + 
+  geom_point(
+    aes(shape = is.sig, 
+        color = class),
+    size = 4,
+    position = pos) +
+  scale_color_lancet() +
+    scale_shape_manual(values=c(1,16)) +
+  geom_hline(yintercept = 1, lty = 3, 
+             size = 1) +
+ # scale_y_continuous(limits = c(0,2)) +
+    scale_y_log10() +
+  coord_flip() +
+  geom_linerange(aes(ymin = OR.lo, ymax = OR.hi, color = class, linetype = Model), position = pos, size = 1) +
+  scale_linetype_manual(values = c("solid", "dotted", "dotdash", "dashed")) + # solid line for m0, dotted for m1, dotdash for m2, dashed line for m3, 
+  theme(strip.background = element_rect(fill = "white"),
+        strip.background.x = element_blank()) +
+  theme_classic(base_size = 16) +
+  geom_label(
+    data = filter(tmp7, Model == "m0"),
+      aes(label=n,
+          color = class),
+  nudge_x = 0.5,
+  nudge_y = 0.1) +
+  theme(axis.title.y = element_blank(),
+        legend.position = "none")
+
+
+p8  
+
+
+# save figure
+  filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/forest_plots/all_models_pub.pdf"
+  ggsave(filename=filename, p8, width = 200, height = 100, units = "mm", dpi = 300, scale = 1.5)
+
+```
+
+
+## Supplement: All models
+
+
+```{r}
+all_models <- rbind(m0, m1, m2, m3)
+```
+
+
+```{r, fig9, fig.height=20, fig.width=15, warning=FALSE}
+
+ tmp8 <- all_models
+
+# significant estimates marker
+tmp8 <- tmp8 %>% 
+  mutate(is.sig = OR.lo < 1 & OR.hi < 1 | OR.lo > 1 & OR.hi > 1 | OR.lo == 1 & OR.hi == 1)  %>% 
+  mutate(OR.hi = case_when(
+    OR.hi >2  ~  4,
+    TRUE  ~ OR.hi
+    )
+  )
+
+tmp8 <- tmp8 %>% 
+  mutate(Var=factor(Var, levels=c("G03AC03 (levonorgestrel)",  "ATC G03AC03",
+    "G03AC08 (etonogestrel)",    "ATC G03AC08",
+    "GROUP: CONTRACEPTIVE\nIMPLANT",  # HC group: implant
+    "G03AA13 (contraceptive patch with\nnorelgestromin and ethinylestradiol)",  "ATC G03AA13",
+    "GROUP: CONTRACEPTIVE PATCH",  # HC group: patch
+    "G02BB01 (vaginal ring with\nprogestogen and ethinylestradiol)", "ATC G02BB01",
+    "GROUP: VAGINAL RING", # HC group: vaginal ring
+    "G02BA03 (plastic IUD\nwith progestogen)",  "ATC G02BA03",
+    "GROUP: HORMONAL\nINTRAUTERINE DEVICE", # HC group: IUD
+    "G03AC10 (drospirenone)",  "ATC G03AC10",
+    "G03AC09 (desogestrel)", "ATC G03AC09",
+    "G03AC01 (norethisterone)", "ATC G03AC01",
+    "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES", # HC group: POC
+    "G03AB08 (dienogest and\nestradiol)",  "ATC G03AB08",
+    "G03AA14 (nomegestrol\nand estradiol)",  "ATC G03AA14",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", # HC group: E2-COC
+    "G03HB01 (cyproterone\nand ethinylestradiol)",  "ATC G03HB01",
+    "G03AB03 (levonorgestrel\nand ethinylestradiol)", "ATC G03AB03",
+    "G03AA16 (dienogest and\nethinylestradiol)",  "ATC G03AA16",
+    "G03AA12 (drospirenone\nand ethinylestradiol)", "ATC G03AA12",
+    "G03AA10 (gestodene and\nethinylestradiol)", "ATC G03AA10",
+    "G03AA09 (desogestrel\nand ethinylestradiol)", "ATC G03AA09",
+    "G03AA07 (levonorgestrel\nand ethinylestradiol)",  "ATC G03AA07",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE", # HC group: EE-COC
+    "GROUP: NO HORMONAL\nCONTRACEPTION"  # HC group: none                     
+    )))
+
+# filter out unneccessary double rows (groups only containing one product and one of the no HC groups)
+
+tmp8 <- tmp8 %>% 
+  mutate(duplicate = case_when(
+    Var == "GROUP: NO HORMONAL\nCONTRACEPTION" & Model == "m1" ~ 'yes', 
+    Var == "GROUP: NO HORMONAL\nCONTRACEPTION" & Model == "m2" ~ 'yes', 
+    Var == "GROUP: NO HORMONAL\nCONTRACEPTION" & Model == "m3" ~ 'yes', 
+    Var == "GROUP: HORMONAL\nINTRAUTERINE DEVICE" ~ 'yes',
+    Var == "GROUP: VAGINAL RING"  ~ 'yes',
+    Var == "GROUP: CONTRACEPTIVE PATCH" ~ 'yes',
+    TRUE ~ 'no'
+     )) 
+
+tmp8 <- tmp8 %>% 
+  filter(duplicate != "yes")
+
+
+
+pos <- position_nudge(x=as.numeric(as.factor(tmp8$Model))/5 -0.1)
+
+p9 <-  ggplot(data=tmp8, aes(x = Var, y = OR)) + 
+  geom_point(
+    aes(shape = is.sig, 
+        color = class),
+    size = 4,
+    position = pos) +
+  scale_color_lancet() +
+    scale_shape_manual(values=c(1,16)) +
+  geom_hline(yintercept = 1, lty = 3, 
+             size = 1) +
+  scale_y_continuous(limits = c(0,2)) +
+  scale_y_log10() +
+  coord_flip() +
+  geom_linerange(aes(ymin = OR.lo, ymax = OR.hi, color = class, linetype = Model), position = pos, size = 1) +
+  scale_linetype_manual(values = c("solid", "dotted", "dotdash", "dashed")) + # solid line for m0, dotted for m1, dotdash for m2, dashed line for m3
+  theme(strip.background = element_rect(fill = "white"),
+        strip.background.x = element_blank()) +
+  theme_classic(base_size = 16) +
+  geom_label(
+    data = filter(tmp8, Model == "m0"),
+      aes(label=n, 
+          color = class),
+    nudge_x = 0.5,
+    nudge_y = 0.1) +
+  theme(axis.title.y = element_blank(),
+        legend.position = "none")
+
+
+p9  
+
+
+
+
+
+# save figure
+  filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/supplement/supplement_all.pdf"
+  ggsave(filename=filename, p9, width = 180, height = 240, units = "mm", dpi = 600, scale = 1.5)
+
+```
+
+
+# Sensitivity analysis
+
+* m4: number of previous pregnancy (comparison to model m1, which accounts for any history of pregnancy)
+* m6: exclude women < age 25 years (comparison to model m0, possible free HC issued by municipality)
+* m4: exclude pensioners (comparison to model m3, higher anemia prevalence in the pensioner group)
+
+
+## Load data for sensitivity analysis
+
+```{r}
+# load models
+load(file = "W:/Veripalvelu/sofie/anemia_and_hc/results/sensitivity_analysis/models_sensitivity/anemia.m4.Rdata") # m4
+load(file = "W:/Veripalvelu/sofie/anemia_and_hc/results/sensitivity_analysis/models_sensitivity/anemia.m5.Rdata") # m5
+load(file = "W:/Veripalvelu/sofie/anemia_and_hc/results/sensitivity_analysis/models_sensitivity/anemia.m6.Rdata") # m6
+load(file = "W:/Veripalvelu/sofie/anemia_and_hc/results/sensitivity_analysis/models_sensitivity/anemia.m7.Rdata") # m7
+load(file = "W:/Veripalvelu/sofie/anemia_and_hc/results/sensitivity_analysis/models_sensitivity/anemia.m8.Rdata") # m8
+```
+
+
+
+```{r}
+# replace 999999 observations with <5
+NCCm4 <- anemia.m4
+NCCm5 <- anemia.m5
+NCCm6 <- anemia.m6
+NCCm7 <- anemia.m7
+NCCm8 <- anemia.m8
+
+
+NCCm4 <- NCCm4 %>% 
+  mutate(n = N.case + N.control)
+NCCm5 <- NCCm5 %>% 
+  mutate(n = N.case + N.control)
+NCCm6 <- NCCm6 %>% 
+  mutate(n = N.case + N.control)
+NCCm7 <- NCCm7 %>% 
+  mutate(n = N.case + N.control)
+NCCm8 <- NCCm8 %>% 
+  mutate(n = N.case + N.control)
+
+
+NCCm4$N.case[NCCm4$N.case >= 999999] <- "<5"
+NCCm4$N.control[NCCm4$N.control >= 999999] <- "<5"
+NCCm4$n[NCCm4$n >= 999999] <- "<5"
+
+
+NCCm5$N.case[NCCm5$N.case >= 999999] <- "<5"
+NCCm5$N.control[NCCm5$N.control >= 999999] <- "<5"
+NCCm5$n[NCCm5$n >= 999999] <- "<5"
+
+
+NCCm6$N.case[NCCm6$N.case >= 999999] <- "<5"
+NCCm6$N.control[NCCm6$N.control >= 999999] <- "<5"
+NCCm6$n[NCCm6$n >= 999999] <- "<5"
+
+
+NCCm7$N.case[NCCm7$N.case >= 999999] <- "<5"
+NCCm7$N.control[NCCm7$N.control >= 999999] <- "<5"
+NCCm7$n[NCCm7$n >= 999999] <- "<5"
+
+
+
+NCCm8$N.case[NCCm8$N.case >= 999999] <- "<5"
+NCCm8$N.control[NCCm8$N.control >= 999999] <- "<5"
+NCCm8$n[NCCm8$n >= 999999] <- "<5"
+
+```
+
+
+
+
+## m4: Number of previous pregnancy
+
+Total number of childbirths (comparison to model m1, which accounts for any history of pregnancy).
+
+### Nested case-control results 
+
+
+```{r,results='markup',warning=FALSE,message=FALSE}
+
+knitr::kable(NCCm4,digits=2,
+             caption="NCC odds ratios, m4. Only matching taken into account. Frequencies under 5 not shown.")
+```
+
+
+
+### Temporary data frames for modelling
+
+```{r}
+m4 <- NCCm4
+```
+
+
+```{r}
+
+m4 <- tmp.atc.classification %>% 
+  inner_join(m4, by = "Var") 
+
+m4 <- m4 %>% 
+  mutate(class = case_when(
+    Level == "no" ~ "No hormonal contraception", 
+    Level == "implant" ~ "Contraceptive implant", 
+    Level == "IUD" ~ "Hormonal intrauterine device", 
+    Level == "COC_EE" ~ "Combined oral contraceptives, EE",
+    Level == "COC_E2" ~ "Combined oral contraceptives, E2", 
+    Level == "POC" ~ "Progestin-only oral contraceptives",
+    Level == "ring" ~ "Vaginal ring", 
+    Level == "patch" ~ "Contraceptive patch",
+    Level == "G02BA03" ~ "Hormonal intrauterine device",
+    Level == "G02BB01" ~ "Vaginal ring",
+    Level == "G03AA07" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA09" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA10" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA12" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA16" ~ "Combined oral contraceptives, EE",
+    Level == "G03AB03" ~ "Combined oral contraceptives, EE",
+    Level == "G03HB01" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA13" ~ "Contraceptive patch",
+    Level == "G03AB08" ~ "Combined oral contraceptives, E2",
+    Level == "G03AA14" ~ "Combined oral contraceptives, E2",
+    Level == "G03AC01" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC09" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC10" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC03" ~ "Contraceptive implant",
+    Level == "G03AC08" ~ "Contraceptive implant"
+    #TRUE  ~ as.character(class)
+  )) %>% 
+  mutate(Model = "m4")
+
+```
+
+
+```{r}
+m4 <- m4 %>% 
+  mutate(Var = case_when(
+    Level == "no" ~ "GROUP: NO HORMONAL\nCONTRACEPTION", 
+    Level == "implant" ~ "GROUP: CONTRACEPTIVE\nIMPLANT", 
+    Level == "IUD" ~ "GROUP: HORMONAL\nINTRAUTERINE DEVICE", 
+    Level == "COC_EE" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE",
+    Level == "COC_E2" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", 
+    Level == "POC" ~ "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES",
+    Level == "ring" ~ "GROUP: VAGINAL RING", 
+    Level == "patch" ~ "GROUP: CONTRACEPTIVE PATCH",
+    Level == "G02BA03" ~ "G02BA03 (plastic IUD\nwith progestogen)",
+    Level == "G02BB01" ~ "G02BB01 (vaginal ring with\nprogestogen and ethinylestradiol)",
+    Level == "G03AA07" ~ "G03AA07 (levonorgestrel\nand ethinylestradiol)",
+    Level == "G03AA09" ~ "G03AA09 (desogestrel\nand ethinylestradiol)",
+    Level == "G03AA10" ~ "G03AA10 (gestodene and\nethinylestradiol)",
+    Level == "G03AA12" ~ "G03AA12 (drospirenone\nand ethinylestradiol)",
+    Level == "G03AA13" ~ "G03AA13 (contraceptive patch with\nnorelgestromin and ethinylestradiol)",
+    Level == "G03AA14" ~ "G03AA14 (nomegestrol\nand estradiol)",
+    Level == "G03AA16" ~ "G03AA16 (dienogest and\nethinylestradiol)",
+    Level == "G03AB03" ~ "G03AB03 (levonorgestrel\nand ethinylestradiol)",
+    Level == "G03AB08" ~ "G03AB08 (dienogest and\nestradiol)",
+    Level == "G03AC01" ~ "G03AC01 (norethisterone)",
+    Level == "G03AC03" ~ "G03AC03 (levonorgestrel)",
+    Level == "G03AC08" ~ "G03AC08 (etonogestrel)",
+    Level == "G03AC09" ~ "G03AC09 (desogestrel)",
+    Level == "G03AC10" ~ "G03AC10 (drospirenone)",
+    Level == "G03HB01" ~ "G03HB01 (cyproterone\nand ethinylestradiol)",
+    TRUE  ~ as.character(Var)
+  ))
+
+```
+
+
+
+```{r}
+
+m4 <- m4 %>% 
+  mutate(shape = case_when(
+    Var == "Classification (Classification)" ~ "Classification", 
+    Var == "HormonalContraception (HormonalContraception)" ~ "Current hormonal contraception",
+  ))
+
+```
+
+
+### Forest plot
+
+```{r, fig10, fig.height=10, fig.width=15, warning=FALSE}
+
+ tmp4 <- m4
+
+
+# significant estimates marker
+tmp4 <- tmp4 %>% 
+  mutate(is.sig = OR.lo < 1 & OR.hi < 1 | OR.lo > 1 & OR.hi > 1 | OR.lo == 1 & OR.hi == 1)  %>% 
+  mutate(OR.hi = case_when(
+    OR.hi >2  ~  2,
+    TRUE  ~ OR.hi
+    )
+  )
+
+tmp4 <- tmp4 %>% 
+  mutate(Var=factor(Var, levels=c("G03AC03 (levonorgestrel)",  "ATC G03AC03",
+    "G03AC08 (etonogestrel)",    "ATC G03AC08",
+    "GROUP: CONTRACEPTIVE\nIMPLANT",  # HC group: implant
+    "G03AA13 (contraceptive patch with\nnorelgestromin and ethinylestradiol)",  "ATC G03AA13",
+    "GROUP: CONTRACEPTIVE PATCH",  # HC group: patch
+    "G02BB01 (vaginal ring with\nprogestogen and ethinylestradiol)", "ATC G02BB01",
+    "GROUP: VAGINAL RING", # HC group: vaginal ring
+    "G02BA03 (plastic IUD\nwith progestogen)",  "ATC G02BA03",
+    "GROUP: HORMONAL\nINTRAUTERINE DEVICE", # HC group: IUD
+    "G03AC10 (drospirenone)",  "ATC G03AC10",
+    "G03AC09 (desogestrel)", "ATC G03AC09",
+    "G03AC01 (norethisterone)", "ATC G03AC01",
+    "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES", # HC group: POC
+    "G03AB08 (dienogest and\nestradiol)",  "ATC G03AB08",
+    "G03AA14 (nomegestrol\nand estradiol)",  "ATC G03AA14",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", # HC group: E2-COC
+    "G03HB01 (cyproterone\nand ethinylestradiol)",  "ATC G03HB01",
+    "G03AB03 (levonorgestrel\nand ethinylestradiol)", "ATC G03AB03",
+    "G03AA16 (dienogest and\nethinylestradiol)",  "ATC G03AA16",
+    "G03AA12 (drospirenone\nand ethinylestradiol)", "ATC G03AA12",
+    "G03AA10 (gestodene and\nethinylestradiol)", "ATC G03AA10",
+    "G03AA09 (desogestrel\nand ethinylestradiol)", "ATC G03AA09",
+    "G03AA07 (levonorgestrel\nand ethinylestradiol)",  "ATC G03AA07",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE", # HC group: EE-COC
+    "GROUP: NO HORMONAL\nCONTRACEPTION"  # HC group: none                     
+    )))
+
+
+p5 <-  ggplot(data=tmp4, aes(x = Var, y = OR)) + 
+  geom_point(
+    aes(shape = is.sig, 
+        color = class),
+    size = 4,
+    position = position_dodge(2)) +
+    scale_shape_manual(values=c(1,16)) +  
+  scale_color_lancet() +
+  geom_hline(yintercept = 1, lty = 3, 
+             size = 1) +
+  scale_y_continuous(limits = c(0,2)) +
+  coord_flip() +
+  geom_linerange(aes(ymin = OR.lo, ymax = OR.hi, color = class), position = position_dodge(2), size = 1) +
+#  geom_pointrange(aes(ymin = OR.lo, ymax = OR.hi), position = position_dodge(2), size = 1) +
+  theme(strip.background = element_rect(fill = "white"),
+        strip.background.x = element_blank()) +
+  theme_classic(base_size = 16) +
+ # ggtitle("NCC odds ratios, m0", subtitle = "Matching; Unadjusted") +
+  #geom_text(aes(x=y, y=x,label=n))+  
+  geom_label(aes(label=n, color = class, size = 2), nudge_x = 0.3,nudge_y = 0.1) +
+  theme(axis.title.y = element_blank(),
+        legend.position = "none")
+p5
+
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/sensitivity_analysis/forest_plots_sensitivity/NCC.M4.pdf"
+ggsave(filename=filename, p5, width = 180, height = 200, units = "mm", dpi = 600, scale = 1.5)
+
+```
+
+No discernable difference in use of of the pregnancy variables for adjustment (any history of pregnancy (0, >0) vs number of previous pregnancy), we can stick to any history of pregnancy currently used in m1.
+
+## m5: Exclude women younger than 25 years old.
+
+As some municipalities offer free hormonal contraception to women < 25 years old, we exclude them from analysis to check model stability. This model is not adjusted.
+
+Excluding women < 25 years old removes 4608 women from analysis (almost 27 % of the study population).
+
+### Nested case-control results 
+
+
+```{r,results='markup',warning=FALSE,message=FALSE}
+
+knitr::kable(anemia.m5,digits=2,
+             caption="NCC odds ratios. Only matching taken into account. Women under 25 years old excluded. Frequencies under 5 not shown.")
+```
+
+
+
+## Temporary data frames for modelling
+
+
+```{r}
+m5 <- NCCm5
+```
+
+
+```{r}
+
+m5 <- tmp.atc.classification %>% 
+  inner_join(m5, by = "Var") 
+
+m5 <- m5 %>% 
+  mutate(class = case_when(
+    Level == "no" ~ "No hormonal contraception", 
+    Level == "implant" ~ "Contraceptive implant", 
+    Level == "IUD" ~ "Hormonal intrauterine device", 
+    Level == "COC_EE" ~ "Combined oral contraceptives, EE",
+    Level == "COC_E2" ~ "Combined oral contraceptives, E2", 
+    Level == "POC" ~ "Progestin-only oral contraceptives",
+    Level == "ring" ~ "Vaginal ring", 
+    Level == "patch" ~ "Contraceptive patch",
+    Level == "G02BA03" ~ "Hormonal intrauterine device",
+    Level == "G02BB01" ~ "Vaginal ring",
+    Level == "G03AA07" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA09" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA10" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA12" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA16" ~ "Combined oral contraceptives, EE",
+    Level == "G03AB03" ~ "Combined oral contraceptives, EE",
+    Level == "G03HB01" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA13" ~ "Contraceptive patch",
+    Level == "G03AB08" ~ "Combined oral contraceptives, E2",
+    Level == "G03AA14" ~ "Combined oral contraceptives, E2",
+    Level == "G03AC01" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC09" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC10" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC03" ~ "Contraceptive implant",
+    Level == "G03AC08" ~ "Contraceptive implant"
+    #TRUE  ~ as.character(class)
+  ))
+
+```
+
+
+```{r}
+m5 <- m5 %>% 
+  mutate(Var = case_when(
+    Level == "no" ~ "GROUP: NO HORMONAL\nCONTRACEPTION", 
+    Level == "implant" ~ "GROUP: CONTRACEPTIVE\nIMPLANT", 
+    Level == "IUD" ~ "GROUP: HORMONAL\nINTRAUTERINE DEVICE", 
+    Level == "COC_EE" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE",
+    Level == "COC_E2" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", 
+    Level == "POC" ~ "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES",
+    Level == "ring" ~ "GROUP: VAGINAL RING", 
+    Level == "patch" ~ "GROUP: CONTRACEPTIVE PATCH",
+    Level == "G02BA03" ~ "G02BA03 (plastic IUD\nwith progestogen)",
+    Level == "G02BB01" ~ "G02BB01 (vaginal ring with\nprogestogen and ethinylestradiol)",
+    Level == "G03AA07" ~ "G03AA07 (levonorgestrel\nand ethinylestradiol)",
+    Level == "G03AA09" ~ "G03AA09 (desogestrel\nand ethinylestradiol)",
+    Level == "G03AA10" ~ "G03AA10 (gestodene and\nethinylestradiol)",
+    Level == "G03AA12" ~ "G03AA12 (drospirenone\nand ethinylestradiol)",
+    Level == "G03AA13" ~ "G03AA13 (contraceptive patch with\nnorelgestromin and ethinylestradiol)",
+    Level == "G03AA14" ~ "G03AA14 (nomegestrol\nand estradiol)",
+    Level == "G03AA16" ~ "G03AA16 (dienogest and\nethinylestradiol)",
+    Level == "G03AB03" ~ "G03AB03 (levonorgestrel\nand ethinylestradiol)",
+    Level == "G03AB08" ~ "G03AB08 (dienogest and\nestradiol)",
+    Level == "G03AC01" ~ "G03AC01 (norethisterone)",
+    Level == "G03AC03" ~ "G03AC03 (levonorgestrel)",
+    Level == "G03AC08" ~ "G03AC08 (etonogestrel)",
+    Level == "G03AC09" ~ "G03AC09 (desogestrel)",
+    Level == "G03AC10" ~ "G03AC10 (drospirenone)",
+    Level == "G03HB01" ~ "G03HB01 (cyproterone\nand ethinylestradiol)",
+    TRUE  ~ as.character(Var)
+  )) %>% 
+  mutate(Model = "m5")
+
+```
+
+
+
+```{r}
+
+m5 <- m5 %>% 
+  mutate(shape = case_when(
+    Var == "Classification (Classification)" ~ "Classification", 
+    Var == "HormonalContraception (HormonalContraception)" ~ "Current hormonal contraception",
+  ))
+
+```
+
+### Forest plot
+
+```{r, fig11, fig.height=10, fig.width=15, warning=FALSE}
+
+ tmp5 <- m5
+
+
+# significant estimates marker
+tmp5 <- tmp5 %>% 
+  mutate(is.sig = OR.lo < 1 & OR.hi < 1 | OR.lo > 1 & OR.hi > 1 | OR.lo == 1 & OR.hi == 1)  %>% 
+  mutate(OR.hi = case_when(
+    OR.hi >2  ~  2,
+    TRUE  ~ OR.hi
+    )
+  )
+
+tmp5 <- tmp5 %>% 
+  mutate(Var=factor(Var, levels=c("G03AC03 (levonorgestrel)",  "ATC G03AC03",
+    "G03AC08 (etonogestrel)",    "ATC G03AC08",
+    "GROUP: CONTRACEPTIVE\nIMPLANT",  # HC group: implant
+    "G03AA13 (contraceptive patch with\nnorelgestromin and ethinylestradiol)",  "ATC G03AA13",
+    "GROUP: CONTRACEPTIVE PATCH",  # HC group: patch
+    "G02BB01 (vaginal ring with\nprogestogen and ethinylestradiol)", "ATC G02BB01",
+    "GROUP: VAGINAL RING", # HC group: vaginal ring
+    "G02BA03 (plastic IUD\nwith progestogen)",  "ATC G02BA03",
+    "GROUP: HORMONAL\nINTRAUTERINE DEVICE", # HC group: IUD
+    "G03AC10 (drospirenone)",  "ATC G03AC10",
+    "G03AC09 (desogestrel)", "ATC G03AC09",
+    "G03AC01 (norethisterone)", "ATC G03AC01",
+    "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES", # HC group: POC
+    "G03AB08 (dienogest and\nestradiol)",  "ATC G03AB08",
+    "G03AA14 (nomegestrol\nand estradiol)",  "ATC G03AA14",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", # HC group: E2-COC
+    "G03HB01 (cyproterone\nand ethinylestradiol)",  "ATC G03HB01",
+    "G03AB03 (levonorgestrel\nand ethinylestradiol)", "ATC G03AB03",
+    "G03AA16 (dienogest and\nethinylestradiol)",  "ATC G03AA16",
+    "G03AA12 (drospirenone\nand ethinylestradiol)", "ATC G03AA12",
+    "G03AA10 (gestodene and\nethinylestradiol)", "ATC G03AA10",
+    "G03AA09 (desogestrel\nand ethinylestradiol)", "ATC G03AA09",
+    "G03AA07 (levonorgestrel\nand ethinylestradiol)",  "ATC G03AA07",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE", # HC group: EE-COC
+    "GROUP: NO HORMONAL\nCONTRACEPTION"  # HC group: none                     
+    )))
+
+
+p6 <-  ggplot(data=tmp5, aes(x = Var, y = OR)) + 
+  geom_point(
+    aes(shape = is.sig, 
+        color = class),
+    size = 4,
+    position = position_dodge(2)) +
+    scale_shape_manual(values=c(1,16)) +  
+  scale_color_lancet() +
+  geom_hline(yintercept = 1, lty = 3, 
+             size = 1) +
+  scale_y_continuous(limits = c(0,2)) +
+  coord_flip() +
+  geom_linerange(aes(ymin = OR.lo, ymax = OR.hi, color = class), position = position_dodge(2), size = 1) +
+#  geom_pointrange(aes(ymin = OR.lo, ymax = OR.hi), position = position_dodge(2), size = 1) +
+  theme(strip.background = element_rect(fill = "white"),
+        strip.background.x = element_blank()) +
+  theme_classic(base_size = 16) +
+ # ggtitle("NCC odds ratios, m0", subtitle = "Matching; Unadjusted") +
+  #geom_text(aes(x=y, y=x,label=n))+  
+  geom_label(aes(label=n, color = class, size = 2), nudge_x = 0.3,nudge_y = 0.1) +
+  theme(axis.title.y = element_blank(),
+        legend.position = "none")
+p6
+
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/sensitivity_analysis/forest_plots_sensitivity/NCC.M5.pdf"
+ggsave(filename=filename, p6, width = 180, height = 200, units = "mm", dpi = 600, scale = 1.5)
+
+```
+
+Model remains stable despite removing 27 % of the population - very encouraging!  
+
+
+## m6: Exclude pensioners
+
+Comparison to model m3 (full model). 
+
+Removing pensioners (and their sets) removed a total of 4178 participants (25 % of the study population).
+
+### Nested case-control results 
+
+
+```{r,results='markup',warning=FALSE,message=FALSE}
+
+knitr::kable(anemia.m6,digits=2,
+             caption="NCC odds ratios. m3 with sets including pensioners excluded. Frequencies under 5 not shown.")
+```
+
+
+
+### Temporary data frames for modelling
+
+
+```{r}
+m6 <- NCCm6
+```
+
+
+```{r}
+
+m6 <- tmp.atc.classification %>% 
+  inner_join(m6, by = "Var") 
+
+m6 <- m6 %>% 
+  mutate(class = case_when(
+    Level == "no" ~ "No hormonal contraception", 
+    Level == "implant" ~ "Contraceptive implant", 
+    Level == "IUD" ~ "Hormonal intrauterine device", 
+    Level == "COC_EE" ~ "Combined oral contraceptives, EE",
+    Level == "COC_E2" ~ "Combined oral contraceptives, E2", 
+    Level == "POC" ~ "Progestin-only oral contraceptives",
+    Level == "ring" ~ "Vaginal ring", 
+    Level == "patch" ~ "Contraceptive patch",
+    Level == "G02BA03" ~ "Hormonal intrauterine device",
+    Level == "G02BB01" ~ "Vaginal ring",
+    Level == "G03AA07" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA09" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA10" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA12" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA16" ~ "Combined oral contraceptives, EE",
+    Level == "G03AB03" ~ "Combined oral contraceptives, EE",
+    Level == "G03HB01" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA13" ~ "Contraceptive patch",
+    Level == "G03AB08" ~ "Combined oral contraceptives, E2",
+    Level == "G03AA14" ~ "Combined oral contraceptives, E2",
+    Level == "G03AC01" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC09" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC10" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC03" ~ "Contraceptive implant",
+    Level == "G03AC08" ~ "Contraceptive implant"
+    #TRUE  ~ as.character(class)
+  ))
+
+```
+
+
+```{r}
+m6 <- m6 %>% 
+  mutate(Var = case_when(
+    Level == "no" ~ "GROUP: NO HORMONAL\nCONTRACEPTION", 
+    Level == "implant" ~ "GROUP: CONTRACEPTIVE\nIMPLANT", 
+    Level == "IUD" ~ "GROUP: HORMONAL\nINTRAUTERINE DEVICE", 
+    Level == "COC_EE" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE",
+    Level == "COC_E2" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", 
+    Level == "POC" ~ "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES",
+    Level == "ring" ~ "GROUP: VAGINAL RING", 
+    Level == "patch" ~ "GROUP: CONTRACEPTIVE PATCH",
+    Level == "G02BA03" ~ "G02BA03 (plastic IUD\nwith progestogen)",
+    Level == "G02BB01" ~ "G02BB01 (vaginal ring with\nprogestogen and ethinylestradiol)",
+    Level == "G03AA07" ~ "G03AA07 (levonorgestrel\nand ethinylestradiol)",
+    Level == "G03AA09" ~ "G03AA09 (desogestrel\nand ethinylestradiol)",
+    Level == "G03AA10" ~ "G03AA10 (gestodene and\nethinylestradiol)",
+    Level == "G03AA12" ~ "G03AA12 (drospirenone\nand ethinylestradiol)",
+    Level == "G03AA13" ~ "G03AA13 (contraceptive patch with\nnorelgestromin and ethinylestradiol)",
+    Level == "G03AA14" ~ "G03AA14 (nomegestrol\nand estradiol)",
+    Level == "G03AA16" ~ "G03AA16 (dienogest and\nethinylestradiol)",
+    Level == "G03AB03" ~ "G03AB03 (levonorgestrel\nand ethinylestradiol)",
+    Level == "G03AB08" ~ "G03AB08 (dienogest and\nestradiol)",
+    Level == "G03AC01" ~ "G03AC01 (norethisterone)",
+    Level == "G03AC03" ~ "G03AC03 (levonorgestrel)",
+    Level == "G03AC08" ~ "G03AC08 (etonogestrel)",
+    Level == "G03AC09" ~ "G03AC09 (desogestrel)",
+    Level == "G03AC10" ~ "G03AC10 (drospirenone)",
+    Level == "G03HB01" ~ "G03HB01 (cyproterone\nand ethinylestradiol)",
+    TRUE  ~ as.character(Var)
+  )) %>% 
+  mutate(Model = "m6")
+
+```
+
+
+
+```{r}
+
+m6 <- m6 %>% 
+  mutate(shape = case_when(
+    Var == "Classification (Classification)" ~ "Classification", 
+    Var == "HormonalContraception (HormonalContraception)" ~ "Current hormonal contraception",
+  ))
+
+```
+
+### Forest plot
+
+
+```{r, fig12, fig.height=10, fig.width=15, warning=FALSE}
+
+ tmp6 <- m6 
+
+
+# significant estimates marker
+tmp6 <- tmp6 %>% 
+  mutate(is.sig = OR.lo < 1 & OR.hi < 1 | OR.lo > 1 & OR.hi > 1 | OR.lo == 1 & OR.hi == 1)  %>% 
+  mutate(OR.hi = case_when(
+    OR.hi >2  ~  2,
+    TRUE  ~ OR.hi
+    )
+  )
+
+tmp6 <- tmp6 %>% 
+  mutate(Var=factor(Var, levels=c("G03AC03 (levonorgestrel)",  "ATC G03AC03",
+    "G03AC08 (etonogestrel)",    "ATC G03AC08",
+    "GROUP: CONTRACEPTIVE\nIMPLANT",  # HC group: implant
+    "G03AA13 (contraceptive patch with\nnorelgestromin and ethinylestradiol)",  "ATC G03AA13",
+    "GROUP: CONTRACEPTIVE PATCH",  # HC group: patch
+    "G02BB01 (vaginal ring with\nprogestogen and ethinylestradiol)", "ATC G02BB01",
+    "GROUP: VAGINAL RING", # HC group: vaginal ring
+    "G02BA03 (plastic IUD\nwith progestogen)",  "ATC G02BA03",
+    "GROUP: HORMONAL\nINTRAUTERINE DEVICE", # HC group: IUD
+    "G03AC10 (drospirenone)",  "ATC G03AC10",
+    "G03AC09 (desogestrel)", "ATC G03AC09",
+    "G03AC01 (norethisterone)", "ATC G03AC01",
+    "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES", # HC group: POC
+    "G03AB08 (dienogest and\nestradiol)",  "ATC G03AB08",
+    "G03AA14 (nomegestrol\nand estradiol)",  "ATC G03AA14",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", # HC group: E2-COC
+    "G03HB01 (cyproterone\nand ethinylestradiol)",  "ATC G03HB01",
+    "G03AB03 (levonorgestrel\nand ethinylestradiol)", "ATC G03AB03",
+    "G03AA16 (dienogest and\nethinylestradiol)",  "ATC G03AA16",
+    "G03AA12 (drospirenone\nand ethinylestradiol)", "ATC G03AA12",
+    "G03AA10 (gestodene and\nethinylestradiol)", "ATC G03AA10",
+    "G03AA09 (desogestrel\nand ethinylestradiol)", "ATC G03AA09",
+    "G03AA07 (levonorgestrel\nand ethinylestradiol)",  "ATC G03AA07",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE", # HC group: EE-COC
+    "GROUP: NO HORMONAL\nCONTRACEPTION"  # HC group: none                     
+    )))
+
+
+p7 <-  ggplot(data=tmp6, aes(x = Var, y = OR)) + 
+  geom_point(
+    aes(shape = is.sig, 
+        color = class),
+    size = 4,
+    position = position_dodge(2)) +
+    scale_shape_manual(values=c(1,16)) +  
+  scale_color_lancet() +
+  geom_hline(yintercept = 1, lty = 3, 
+             size = 1) +
+  scale_y_continuous(limits = c(0,2)) +
+  coord_flip() +
+  geom_linerange(aes(ymin = OR.lo, ymax = OR.hi, color = class), position = position_dodge(2), size = 1) +
+#  geom_pointrange(aes(ymin = OR.lo, ymax = OR.hi), position = position_dodge(2), size = 1) +
+  theme(strip.background = element_rect(fill = "white"),
+        strip.background.x = element_blank()) +
+  theme_classic(base_size = 16) +
+ # ggtitle("NCC odds ratios, m0", subtitle = "Matching; Unadjusted") +
+  #geom_text(aes(x=y, y=x,label=n))+  
+  geom_label(aes(label=n, color = class, size = 2), nudge_x = 0.3,nudge_y = 0.1) +
+  theme(axis.title.y = element_blank(),
+        legend.position = "none")
+p7
+
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/sensitivity_analysis/forest_plots_sensitivity/NCC.M6.pdf"
+ggsave(filename=filename, p7, width = 180, height = 200, units = "mm", dpi = 600, scale = 1.5)
+
+```
+
+Very minor changes to estimates.
+
+
+
+## m7: Exclude women younger than 35 years old.
+
+To see whether the POC-COC estimate difference is caused by the age of the users, we excluded women under the age of 35 (mean age of POC users).
+
+After removal, 6740 women remain (41.5 % of the original population).
+
+### Nested case-control results 
+
+
+```{r,results='markup',warning=FALSE,message=FALSE}
+
+knitr::kable(anemia.m7,digits=2,
+             caption="NCC odds ratios. Only matching taken into account. Women under 35 years old excluded. Frequencies under 5 not shown.")
+```
+
+
+
+## Temporary data frames for modelling
+
+
+```{r}
+m7 <- NCCm7
+```
+
+
+```{r}
+
+m7 <- tmp.atc.classification %>% 
+  inner_join(m7, by = "Var") 
+
+m7 <- m7 %>% 
+  mutate(class = case_when(
+    Level == "no" ~ "No hormonal contraception", 
+    Level == "implant" ~ "Contraceptive implant", 
+    Level == "IUD" ~ "Hormonal intrauterine device", 
+    Level == "COC_EE" ~ "Combined oral contraceptives, EE",
+    Level == "COC_E2" ~ "Combined oral contraceptives, E2", 
+    Level == "POC" ~ "Progestin-only oral contraceptives",
+    Level == "ring" ~ "Vaginal ring", 
+    Level == "patch" ~ "Contraceptive patch",
+    Level == "G02BA03" ~ "Hormonal intrauterine device",
+    Level == "G02BB01" ~ "Vaginal ring",
+    Level == "G03AA07" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA09" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA10" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA12" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA16" ~ "Combined oral contraceptives, EE",
+    Level == "G03AB03" ~ "Combined oral contraceptives, EE",
+    Level == "G03HB01" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA13" ~ "Contraceptive patch",
+    Level == "G03AB08" ~ "Combined oral contraceptives, E2",
+    Level == "G03AA14" ~ "Combined oral contraceptives, E2",
+    Level == "G03AC01" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC09" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC10" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC03" ~ "Contraceptive implant",
+    Level == "G03AC08" ~ "Contraceptive implant"
+    #TRUE  ~ as.character(class)
+  ))
+
+```
+
+
+```{r}
+m7 <- m7 %>% 
+  mutate(Var = case_when(
+    Level == "no" ~ "GROUP: NO HORMONAL\nCONTRACEPTION", 
+    Level == "implant" ~ "GROUP: CONTRACEPTIVE\nIMPLANT", 
+    Level == "IUD" ~ "GROUP: HORMONAL\nINTRAUTERINE DEVICE", 
+    Level == "COC_EE" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE",
+    Level == "COC_E2" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", 
+    Level == "POC" ~ "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES",
+    Level == "ring" ~ "GROUP: VAGINAL RING", 
+    Level == "patch" ~ "GROUP: CONTRACEPTIVE PATCH",
+    Level == "G02BA03" ~ "G02BA03 (plastic IUD\nwith progestogen)",
+    Level == "G02BB01" ~ "G02BB01 (vaginal ring with\nprogestogen and ethinylestradiol)",
+    Level == "G03AA07" ~ "G03AA07 (levonorgestrel\nand ethinylestradiol)",
+    Level == "G03AA09" ~ "G03AA09 (desogestrel\nand ethinylestradiol)",
+    Level == "G03AA10" ~ "G03AA10 (gestodene and\nethinylestradiol)",
+    Level == "G03AA12" ~ "G03AA12 (drospirenone\nand ethinylestradiol)",
+    Level == "G03AA13" ~ "G03AA13 (contraceptive patch with\nnorelgestromin and ethinylestradiol)",
+    Level == "G03AA14" ~ "G03AA14 (nomegestrol\nand estradiol)",
+    Level == "G03AA16" ~ "G03AA16 (dienogest and\nethinylestradiol)",
+    Level == "G03AB03" ~ "G03AB03 (levonorgestrel\nand ethinylestradiol)",
+    Level == "G03AB08" ~ "G03AB08 (dienogest and\nestradiol)",
+    Level == "G03AC01" ~ "G03AC01 (norethisterone)",
+    Level == "G03AC03" ~ "G03AC03 (levonorgestrel)",
+    Level == "G03AC08" ~ "G03AC08 (etonogestrel)",
+    Level == "G03AC09" ~ "G03AC09 (desogestrel)",
+    Level == "G03AC10" ~ "G03AC10 (drospirenone)",
+    Level == "G03HB01" ~ "G03HB01 (cyproterone\nand ethinylestradiol)",
+    TRUE  ~ as.character(Var)
+  )) %>% 
+  mutate(Model = "m7")
+
+```
+
+
+
+```{r}
+
+m7 <- m7 %>% 
+  mutate(shape = case_when(
+    Var == "Classification (Classification)" ~ "Classification", 
+    Var == "HormonalContraception (HormonalContraception)" ~ "Current hormonal contraception",
+  ))
+
+```
+
+### Forest plot
+
+```{r, fig13, fig.height=10, fig.width=15, warning=FALSE}
+
+ tmp7 <- m7
+
+
+# significant estimates marker
+tmp7 <- tmp7 %>% 
+  mutate(is.sig = OR.lo < 1 & OR.hi < 1 | OR.lo > 1 & OR.hi > 1 | OR.lo == 1 & OR.hi == 1)  %>% 
+  mutate(OR.hi = case_when(
+    OR.hi >2  ~  2,
+    TRUE  ~ OR.hi
+    )
+  )
+
+tmp7 <- tmp7 %>% 
+  mutate(Var=factor(Var, levels=c("G03AC03 (levonorgestrel)",  "ATC G03AC03",
+    "G03AC08 (etonogestrel)",    "ATC G03AC08",
+    "GROUP: CONTRACEPTIVE\nIMPLANT",  # HC group: implant
+    "G03AA13 (contraceptive patch with\nnorelgestromin and ethinylestradiol)",  "ATC G03AA13",
+    "GROUP: CONTRACEPTIVE PATCH",  # HC group: patch
+    "G02BB01 (vaginal ring with\nprogestogen and ethinylestradiol)", "ATC G02BB01",
+    "GROUP: VAGINAL RING", # HC group: vaginal ring
+    "G02BA03 (plastic IUD\nwith progestogen)",  "ATC G02BA03",
+    "GROUP: HORMONAL\nINTRAUTERINE DEVICE", # HC group: IUD
+    "G03AC10 (drospirenone)",  "ATC G03AC10",
+    "G03AC09 (desogestrel)", "ATC G03AC09",
+    "G03AC01 (norethisterone)", "ATC G03AC01",
+    "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES", # HC group: POC
+    "G03AB08 (dienogest and\nestradiol)",  "ATC G03AB08",
+    "G03AA14 (nomegestrol\nand estradiol)",  "ATC G03AA14",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", # HC group: E2-COC
+    "G03HB01 (cyproterone\nand ethinylestradiol)",  "ATC G03HB01",
+    "G03AB03 (levonorgestrel\nand ethinylestradiol)", "ATC G03AB03",
+    "G03AA16 (dienogest and\nethinylestradiol)",  "ATC G03AA16",
+    "G03AA12 (drospirenone\nand ethinylestradiol)", "ATC G03AA12",
+    "G03AA10 (gestodene and\nethinylestradiol)", "ATC G03AA10",
+    "G03AA09 (desogestrel\nand ethinylestradiol)", "ATC G03AA09",
+    "G03AA07 (levonorgestrel\nand ethinylestradiol)",  "ATC G03AA07",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE", # HC group: EE-COC
+    "GROUP: NO HORMONAL\nCONTRACEPTION"  # HC group: none                     
+    )))
+
+
+p8 <-  ggplot(data=tmp7, aes(x = Var, y = OR)) + 
+  geom_point(
+    aes(shape = is.sig, 
+        color = class),
+    size = 4,
+    position = position_dodge(2)) +
+    scale_shape_manual(values=c(1,16)) +  
+  scale_color_lancet() +
+  geom_hline(yintercept = 1, lty = 3, 
+             size = 1) +
+  scale_y_continuous(limits = c(0,2)) +
+  coord_flip() +
+  geom_linerange(aes(ymin = OR.lo, ymax = OR.hi, color = class), position = position_dodge(2), size = 1) +
+#  geom_pointrange(aes(ymin = OR.lo, ymax = OR.hi), position = position_dodge(2), size = 1) +
+  theme(strip.background = element_rect(fill = "white"),
+        strip.background.x = element_blank()) +
+  theme_classic(base_size = 16) +
+ # ggtitle("NCC odds ratios, m0", subtitle = "Matching; Unadjusted") +
+  #geom_text(aes(x=y, y=x,label=n))+  
+  geom_label(aes(label=n, color = class, size = 2), nudge_x = 0.3,nudge_y = 0.1) +
+  theme(axis.title.y = element_blank(),
+        legend.position = "none")
+p8
+
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/sensitivity_analysis/forest_plots_sensitivity/NCC.M7.pdf"
+ggsave(filename=filename, p8, width = 180, height = 200, units = "mm", dpi = 600, scale = 1.5)
+
+```
+
+
+
+## m8: Only Helsinki
+
+Include only Helsinki, to see is there is evidence of regional differences in HC prescribing.
+
+### Nested case-control results 
+
+
+```{r,results='markup',warning=FALSE,message=FALSE}
+
+knitr::kable(anemia.m8,digits=2,
+             caption="NCC odds ratios. Only matching taken into account. Only Helsinki. Frequencies under 5 not shown.")
+```
+
+
+
+## Temporary data frames for modelling
+
+
+```{r}
+m8 <- NCCm8
+```
+
+
+```{r}
+
+m8 <- tmp.atc.classification %>% 
+  inner_join(m8, by = "Var") 
+
+m8 <- m8 %>% 
+  mutate(class = case_when(
+    Level == "no" ~ "No hormonal contraception", 
+    Level == "implant" ~ "Contraceptive implant", 
+    Level == "IUD" ~ "Hormonal intrauterine device", 
+    Level == "COC_EE" ~ "Combined oral contraceptives, EE",
+    Level == "COC_E2" ~ "Combined oral contraceptives, E2", 
+    Level == "POC" ~ "Progestin-only oral contraceptives",
+    Level == "ring" ~ "Vaginal ring", 
+    Level == "patch" ~ "Contraceptive patch",
+    Level == "G02BA03" ~ "Hormonal intrauterine device",
+    Level == "G02BB01" ~ "Vaginal ring",
+    Level == "G03AA07" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA09" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA10" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA12" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA16" ~ "Combined oral contraceptives, EE",
+    Level == "G03AB03" ~ "Combined oral contraceptives, EE",
+    Level == "G03HB01" ~ "Combined oral contraceptives, EE",
+    Level == "G03AA13" ~ "Contraceptive patch",
+    Level == "G03AB08" ~ "Combined oral contraceptives, E2",
+    Level == "G03AA14" ~ "Combined oral contraceptives, E2",
+    Level == "G03AC01" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC09" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC10" ~ "Progestin-only oral contraceptives",
+    Level == "G03AC03" ~ "Contraceptive implant",
+    Level == "G03AC08" ~ "Contraceptive implant"
+    #TRUE  ~ as.character(class)
+  ))
+
+```
+
+
+```{r}
+m8 <- m8 %>% 
+  mutate(Var = case_when(
+    Level == "no" ~ "GROUP: NO HORMONAL\nCONTRACEPTION", 
+    Level == "implant" ~ "GROUP: CONTRACEPTIVE\nIMPLANT", 
+    Level == "IUD" ~ "GROUP: HORMONAL\nINTRAUTERINE DEVICE", 
+    Level == "COC_EE" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE",
+    Level == "COC_E2" ~ "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", 
+    Level == "POC" ~ "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES",
+    Level == "ring" ~ "GROUP: VAGINAL RING", 
+    Level == "patch" ~ "GROUP: CONTRACEPTIVE PATCH",
+    Level == "G02BA03" ~ "G02BA03 (plastic IUD\nwith progestogen)",
+    Level == "G02BB01" ~ "G02BB01 (vaginal ring with\nprogestogen and ethinylestradiol)",
+    Level == "G03AA07" ~ "G03AA07 (levonorgestrel\nand ethinylestradiol)",
+    Level == "G03AA09" ~ "G03AA09 (desogestrel\nand ethinylestradiol)",
+    Level == "G03AA10" ~ "G03AA10 (gestodene and\nethinylestradiol)",
+    Level == "G03AA12" ~ "G03AA12 (drospirenone\nand ethinylestradiol)",
+    Level == "G03AA13" ~ "G03AA13 (contraceptive patch with\nnorelgestromin and ethinylestradiol)",
+    Level == "G03AA14" ~ "G03AA14 (nomegestrol\nand estradiol)",
+    Level == "G03AA16" ~ "G03AA16 (dienogest and\nethinylestradiol)",
+    Level == "G03AB03" ~ "G03AB03 (levonorgestrel\nand ethinylestradiol)",
+    Level == "G03AB08" ~ "G03AB08 (dienogest and\nestradiol)",
+    Level == "G03AC01" ~ "G03AC01 (norethisterone)",
+    Level == "G03AC03" ~ "G03AC03 (levonorgestrel)",
+    Level == "G03AC08" ~ "G03AC08 (etonogestrel)",
+    Level == "G03AC09" ~ "G03AC09 (desogestrel)",
+    Level == "G03AC10" ~ "G03AC10 (drospirenone)",
+    Level == "G03HB01" ~ "G03HB01 (cyproterone\nand ethinylestradiol)",
+    TRUE  ~ as.character(Var)
+  )) %>% 
+  mutate(Model = "m8")
+
+```
+
+
+
+```{r}
+
+m8 <- m8 %>% 
+  mutate(shape = case_when(
+    Var == "Classification (Classification)" ~ "Classification", 
+    Var == "HormonalContraception (HormonalContraception)" ~ "Current hormonal contraception",
+  ))
+
+```
+
+### Forest plot
+
+```{r, fig14, fig.height=10, fig.width=15, warning=FALSE}
+
+ tmp8 <- m8
+
+
+# significant estimates marker
+tmp8 <- tmp8 %>% 
+  mutate(is.sig = OR.lo < 1 & OR.hi < 1 | OR.lo > 1 & OR.hi > 1 | OR.lo == 1 & OR.hi == 1)  %>% 
+  mutate(OR.hi = case_when(
+    OR.hi >2  ~  2,
+    TRUE  ~ OR.hi
+    )
+  )
+
+tmp8 <- tmp8 %>% 
+  mutate(Var=factor(Var, levels=c("G03AC03 (levonorgestrel)",  "ATC G03AC03",
+    "G03AC08 (etonogestrel)",    "ATC G03AC08",
+    "GROUP: CONTRACEPTIVE\nIMPLANT",  # HC group: implant
+    "G03AA13 (contraceptive patch with\nnorelgestromin and ethinylestradiol)",  "ATC G03AA13",
+    "GROUP: CONTRACEPTIVE PATCH",  # HC group: patch
+    "G02BB01 (vaginal ring with\nprogestogen and ethinylestradiol)", "ATC G02BB01",
+    "GROUP: VAGINAL RING", # HC group: vaginal ring
+    "G02BA03 (plastic IUD\nwith progestogen)",  "ATC G02BA03",
+    "GROUP: HORMONAL\nINTRAUTERINE DEVICE", # HC group: IUD
+    "G03AC10 (drospirenone)",  "ATC G03AC10",
+    "G03AC09 (desogestrel)", "ATC G03AC09",
+    "G03AC01 (norethisterone)", "ATC G03AC01",
+    "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES", # HC group: POC
+    "G03AB08 (dienogest and\nestradiol)",  "ATC G03AB08",
+    "G03AA14 (nomegestrol\nand estradiol)",  "ATC G03AA14",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", # HC group: E2-COC
+    "G03HB01 (cyproterone\nand ethinylestradiol)",  "ATC G03HB01",
+    "G03AB03 (levonorgestrel\nand ethinylestradiol)", "ATC G03AB03",
+    "G03AA16 (dienogest and\nethinylestradiol)",  "ATC G03AA16",
+    "G03AA12 (drospirenone\nand ethinylestradiol)", "ATC G03AA12",
+    "G03AA10 (gestodene and\nethinylestradiol)", "ATC G03AA10",
+    "G03AA09 (desogestrel\nand ethinylestradiol)", "ATC G03AA09",
+    "G03AA07 (levonorgestrel\nand ethinylestradiol)",  "ATC G03AA07",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE", # HC group: EE-COC
+    "GROUP: NO HORMONAL\nCONTRACEPTION"  # HC group: none                     
+    )))
+
+
+p9 <-  ggplot(data=tmp8, aes(x = Var, y = OR)) + 
+  geom_point(
+    aes(shape = is.sig, 
+        color = class),
+    size = 4,
+    position = position_dodge(2)) +
+    scale_shape_manual(values=c(1,16)) +  
+  scale_color_lancet() +
+  geom_hline(yintercept = 1, lty = 3, 
+             size = 1) +
+  scale_y_continuous(limits = c(0,2)) +
+  coord_flip() +
+  geom_linerange(aes(ymin = OR.lo, ymax = OR.hi, color = class), position = position_dodge(2), size = 1) +
+#  geom_pointrange(aes(ymin = OR.lo, ymax = OR.hi), position = position_dodge(2), size = 1) +
+  theme(strip.background = element_rect(fill = "white"),
+        strip.background.x = element_blank()) +
+  theme_classic(base_size = 16) +
+ # ggtitle("NCC odds ratios, m0", subtitle = "Matching; Unadjusted") +
+  #geom_text(aes(x=y, y=x,label=n))+  
+  geom_label(aes(label=n, color = class, size = 2), nudge_x = 0.3,nudge_y = 0.1) +
+  theme(axis.title.y = element_blank(),
+        legend.position = "none")
+p9
+
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/sensitivity_analysis/forest_plots_sensitivity/NCC.M8.pdf"
+ggsave(filename=filename, p9, width = 180, height = 200, units = "mm", dpi = 600, scale = 1.5)
+
+```
+
+## Supplement: All models
+
+
+```{r}
+all_models_sup <- rbind(m4, m5, m6)
+```
+
+
+```{r, fig15, fig.height=20, fig.width=15, warning=FALSE}
+
+ tmp_sup <- all_models_sup
+
+# significant estimates marker
+tmp_sup <- tmp_sup %>% 
+  mutate(is.sig = OR.lo < 1 & OR.hi < 1 | OR.lo > 1 & OR.hi > 1 | OR.lo == 1 & OR.hi == 1)  
+# %>% 
+#   mutate(OR.hi = case_when(
+#     OR.hi >2  ~  4,
+#     TRUE  ~ OR.hi
+#     )
+#  )
+
+tmp_sup <- tmp_sup %>% 
+  mutate(Var=factor(Var, levels=c("G03AC03 (levonorgestrel)",  "ATC G03AC03",
+    "G03AC08 (etonogestrel)",    "ATC G03AC08",
+    "GROUP: CONTRACEPTIVE\nIMPLANT",  # HC group: implant
+    "G03AA13 (contraceptive patch with\nnorelgestromin and ethinylestradiol)",  "ATC G03AA13",
+    "GROUP: CONTRACEPTIVE PATCH",  # HC group: patch
+    "G02BB01 (vaginal ring with\nprogestogen and ethinylestradiol)", "ATC G02BB01",
+    "GROUP: VAGINAL RING", # HC group: vaginal ring
+    "G02BA03 (plastic IUD\nwith progestogen)",  "ATC G02BA03",
+    "GROUP: HORMONAL\nINTRAUTERINE DEVICE", # HC group: IUD
+    "G03AC10 (drospirenone)",  "ATC G03AC10",
+    "G03AC09 (desogestrel)", "ATC G03AC09",
+    "G03AC01 (norethisterone)", "ATC G03AC01",
+    "GROUP: PROGESTINE-ONLY\nORAL CONTRACEPTIVES", # HC group: POC
+    "G03AB08 (dienogest and\nestradiol)",  "ATC G03AB08",
+    "G03AA14 (nomegestrol\nand estradiol)",  "ATC G03AA14",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, E2", # HC group: E2-COC
+    "G03HB01 (cyproterone\nand ethinylestradiol)",  "ATC G03HB01",
+    "G03AB03 (levonorgestrel\nand ethinylestradiol)", "ATC G03AB03",
+    "G03AA16 (dienogest and\nethinylestradiol)",  "ATC G03AA16",
+    "G03AA12 (drospirenone\nand ethinylestradiol)", "ATC G03AA12",
+    "G03AA10 (gestodene and\nethinylestradiol)", "ATC G03AA10",
+    "G03AA09 (desogestrel\nand ethinylestradiol)", "ATC G03AA09",
+    "G03AA07 (levonorgestrel\nand ethinylestradiol)",  "ATC G03AA07",
+    "GROUP: COMBINED ORAL\nCONTRACEPTIVES, EE", # HC group: EE-COC
+    "GROUP: NO HORMONAL\nCONTRACEPTION"  # HC group: none                     
+    )))
+
+# filter out unneccessary double rows (groups only containing one product and one of the no HC groups)
+
+tmp_sup <- tmp_sup %>% 
+  mutate(duplicate = case_when(
+    Var == "GROUP: NO HORMONAL\nCONTRACEPTION" & Model == "m5" ~ 'yes', 
+    Var == "GROUP: NO HORMONAL\nCONTRACEPTION" & Model == "m6" ~ 'yes', 
+    Var == "GROUP: NO HORMONAL\nCONTRACEPTION" & Model == "m7" ~ 'yes', 
+  #  Var == "GROUP: NO HORMONAL\nCONTRACEPTION" & Model == "m8" ~ 'yes',
+  #  Var == "GROUP: HORMONAL\nINTRAUTERINE DEVICE" ~ 'yes',
+    Var == "GROUP: VAGINAL RING"  ~ 'yes',
+    Var == "GROUP: CONTRACEPTIVE PATCH" ~ 'yes',
+    TRUE ~ 'no'
+     )) 
+
+tmp_sup <- tmp_sup %>% 
+  filter(duplicate != "yes")
+
+
+
+pos <- position_nudge(x=as.numeric(as.factor(tmp_sup$Model))/5 -0.1)
+
+p_sup <-  ggplot(data=tmp_sup, aes(x = Var, y = OR)) + 
+  geom_point(
+    aes(shape = is.sig, 
+        color = Model),
+    size = 4,
+    position = pos) +
+  scale_color_lancet() +
+    scale_shape_manual(values=c(1,16)) +
+  geom_hline(yintercept = 1, lty = 3, 
+             size = 1) +
+  scale_y_log10() +
+  coord_flip() +
+  geom_linerange(aes(ymin = OR.lo, ymax = OR.hi, color = Model), position = pos, size = 1) +
+  scale_linetype_manual(values = c("solid", "dotted", "dotdash", "dashed")) + # solid line for m0, dotted for m1, dotdash for m2, dashed line for m3
+  theme(strip.background = element_rect(fill = "white"),
+        strip.background.x = element_blank()) +
+  theme_classic(base_size = 16) +
+  geom_label(
+    data = filter(tmp_sup, Model == "m0"),
+      aes(label=n, 
+          color = class),
+    nudge_x = 0.5,
+    nudge_y = 0.1) +
+  theme(axis.title.y = element_blank(),
+        legend.position = "none")
+
+
+p_sup  
+
+
+
+
+
+# save figure
+  filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/supplement/supplement_sensitivity.pdf"
+  ggsave(filename=filename, p_sup, width = 180, height = 240, units = "mm", dpi = 600, scale = 1.5)
+
+```
+
+### Join tables
+
+```{r}
+# rename columns 
+names(NCCm4)[names(NCCm4) == "OR"] <- "OR_m4"
+names(NCCm4)[names(NCCm4) == "OR.hi"] <- "OR.hi_m4"
+names(NCCm4)[names(NCCm4) == "OR.lo"] <- "OR.lo_m4"
+names(NCCm4)[names(NCCm4) == "N.control"] <- "N.control_m4"
+names(NCCm4)[names(NCCm4) == "N.case"] <- "N.case_m4"
+
+
+names(NCCm5)[names(NCCm5) == "OR"] <- "OR_m5"
+names(NCCm5)[names(NCCm5) == "OR.hi"] <- "OR.hi_m5"
+names(NCCm5)[names(NCCm5) == "OR.lo"] <- "OR.lo_m5"
+names(NCCm5)[names(NCCm5) == "N.control"] <- "N.control_m5"
+names(NCCm5)[names(NCCm5) == "N.case"] <- "N.case_m5"
+
+names(NCCm6)[names(NCCm6) == "OR"] <- "OR_m6"
+names(NCCm6)[names(NCCm6) == "OR.hi"] <- "OR.hi_m6"
+names(NCCm6)[names(NCCm6) == "OR.lo"] <- "OR.lo_m6"
+names(NCCm6)[names(NCCm6) == "N.control"] <- "N.control_m6"
+names(NCCm6)[names(NCCm6) == "N.case"] <- "N.case_m6"
+
+
+
+mergedTab_sensitivity <- NCCm4 %>% 
+  select( Level, N.control_m4, N.case_m4, OR_m4, OR.hi_m4, OR.lo_m4) %>% 
+  left_join(NCCm5 %>% select(Level, N.control_m5, N.case_m5, OR_m5, OR.hi_m5, OR.lo_m5), by = "Level") 
+
+mergedTab_sensitivity <- mergedTab_sensitivity %>% 
+  select( Level, N.control_m4, N.case_m4, OR_m4, OR.hi_m4, OR.lo_m4, N.control_m5, N.case_m5, OR_m5, OR.hi_m5, OR.lo_m5) %>% 
+  left_join(NCCm6 %>% select(Level, N.control_m6, N.case_m6, OR_m6, OR.hi_m6, OR.lo_m6), by = "Level")
+```
+
+
+```{r,results='markup',warning=FALSE,message=FALSE}
+
+knitr::kable(mergedTab_sensitivity,digits=2)
+
+
+
+```
+
+
+```{r}
+write.csv(mergedTab_sensitivity, "W:/Veripalvelu/sofie/anemia_and_hc/results/supplement/NCCresults_sensitivity.csv", row.names = FALSE)
+```
+
