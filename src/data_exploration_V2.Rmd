@@ -1,0 +1,2781 @@
+---
+title: "Data exploration"
+author: "Mikko Arvas and Sofie Ekroos"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(zoo)
+library(icd.data)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(lubridate)
+library(dplyr)
+library(mapsFinland) #katso Millan whole_blood_research
+library(hexbin)
+library(forcats)
+library(tableone)
+library(corrplot)
+library(data.table)
+library(ggcorrplot)
+library(tidyr)
+library(ggsci)
+library(cowplot)
+library(scales)
+
+#knitr::opts_chunk$set(eval = FALSE) # stop eval chunks from knitting
+```
+
+# Data
+
+Data copied 15052024/SE
+
+## Original sources of study data
+
+The following code chunk contains the original data used to build the study population in mkdataAnemia. This is available for checking purposes, the original files are very large and should not all be loaded at once. If there is a need to check the original source of the data set, uncomment the file that is wanted. 
+
+Keep the original HC purchase and demographic data, as these will be analyzed.
+
+```{r}
+# Load study population, only these individuals included in analyses
+load("W:/Veripalvelu/sofie/anemia_and_hc/data/HCdata2.RData") # copied from W:\Anemia\
+
+#Drug purchase data
+load("W:/Veripalvelu/sofie/anemia_and_hc/data/HCpurchV2021.RData") # copied from W:\UpdateData\
+
+# # Load updated HILMO and Avo-HILMO data
+load("W:/Veripalvelu/sofie/anemia_and_hc/data/THL0224hilmo.RData")
+load("W:/Veripalvelu/sofie/anemia_and_hc/data/THL0224avohilmo.RData")
+# 
+# # Deliveries 1987-2022
+# load("W:/Veripalvelu/sofie/anemia_and_hc/data/rawdeliv202311V2.RData")
+# 
+# # Abortions 1987-2022
+# load("W:/Veripalvelu/sofie/anemia_and_hc/data/rawab202311V2.RData")
+# 
+# # Deaths
+# load("W:/Veripalvelu/sofie/anemia_and_hc/data/rawdea2.RData")# until 31-12-2019
+# 
+# # Cancer
+# load("W:/Veripalvelu/sofie/anemia_and_hc/data/tmpcandt.RData")
+# 
+# # Kela reimbursement codes
+# load("W:/Veripalvelu/sofie/anemia_and_hc/data/kelaerit2021.RData")
+
+
+```
+
+Join HC purchase data with demographic data.
+
+```{r}
+#Limit HC purchases to persons in in HC data
+
+data <- HC.data.2 %>% inner_join(
+  HC.purch.V2021,
+  by=c("shnro" = "shnro")
+)
+
+length(unique(data$shnro))
+
+data %>% nrow()
+
+#Limit HC purchases to persons in in HC data
+
+data <- HC.data.2 %>% inner_join(
+ HC.purch.V2021,
+ by=c("shnro" = "shnro")
+)
+
+length(unique(data$shnro))
+```
+
+## Study data
+
+```{r}
+load("W:/Veripalvelu/mikko/anemia_and_hc/out20240821/anemiaFinalV20240527.RData")
+```
+
+
+```{r}
+length(unique(anemia.dt$shnro))
+```
+
+# Overview of original study data
+
+## Number of purchases
+
+Let's make groups for hormonal contraception classification. 
+
+```{r}
+# we decided to use a different classification, don't uncomment since it will crash mkDataAnemia
+
+tmp.atc.EE<-c("G03AA07", "G02BB01","G03AA09","G03AA10", "G03AA11", "G03AA12", "G03AA13",
+              "G03AA16","G03AB03","G03AB05", "G03AB06")
+tmp.atc.estradiaol<-c("G03AA14", "G03AB08","G03HB01")
+tmp.atc.progestine<-c("G03AC01","G03AC03","G03AC08","G03AC09","G03AC10")
+tmp.atc.iud <- c("G02BA03")
+#IUD G02BA03 (mirena 20 mcg, kyleena 19.5 mcg, jaydess 13.5 mcg)
+
+data <- data %>% mutate(
+  EE = atc %in% tmp.atc.EE,
+  estradiaol = atc %in% tmp.atc.estradiaol,
+  progestine = atc %in% tmp.atc.progestine,
+  IUD = atc %in% tmp.atc.iud,
+  atc.class = case_when(
+    EE == TRUE  ~ "EE",
+    estradiaol == TRUE  ~ "estradiaol",
+    progestine == TRUE  ~ "progestine",
+    IUD == TRUE  ~"IUD"
+  )
+) %>% filter(
+  #EE == TRUE
+  EE == TRUE | estradiaol== TRUE | progestine== TRUE  | IUD== TRUE
+) %>%
+  mutate(
+    yearmon = as.yearmon(toim.date)
+  )
+data %>% nrow()
+```
+
+We realized that this form of classification (EE/estradiol/progestin/IUD) is too broad for our needs, we will instead use a more practical approach that also accounts for mode of delivery and LARC/SARC classification. 
+
+```{r}
+
+tmp.atc.COC_EE <- c("G03AA07","G03AA09","G03AA10","G03AA11","G03AA12","G03AA16","G03AB03","G03AB05","G03AB06","G03HB01")
+tmp.atc.COC_E2 <-c("G03AA14","G03AB08")
+tmp.atc.ring <-c("G02BB01")
+tmp.atc.patch <- c("G03AA13")   
+tmp.atc.POC <-c("G03AC01","G03AC09","G03AC10")
+tmp.atc.implant <- c("G03AC08","G03AC03")
+tmp.atc.IUD <- c("G02BA03")
+
+
+
+data <- data %>% mutate(
+  COC_EE = atc %in% tmp.atc.COC_EE,
+  COC_E2 = atc %in% tmp.atc.COC_E2,
+  Ring = atc %in% tmp.atc.ring,
+  Patch = atc %in% tmp.atc.patch,
+  POC = atc %in% tmp.atc.POC,
+  Implant = atc %in% tmp.atc.implant,
+  IUD = atc %in% tmp.atc.IUD,
+  atc.class_deliv = case_when(
+    COC_EE == TRUE  ~ "COC_EE",
+    COC_E2 == TRUE  ~ "COC_E2",
+    Ring == TRUE  ~ "Ring",
+    Patch == TRUE  ~ "Patch",
+    POC == TRUE  ~ "POC",
+    Implant == TRUE  ~ "Implant",
+    IUD == TRUE  ~"IUD"
+  )
+) %>% filter(
+  COC_EE == TRUE | COC_E2 == TRUE | Ring == TRUE | Patch == TRUE  | POC == TRUE  | Implant == TRUE  | IUD == TRUE
+) %>% 
+  mutate(
+    yearmon = as.yearmon(toim.date)
+  )
+data %>% nrow()
+
+```
+
+```{r}
+data %>% group_by(atc,atc.class_deliv) %>% 
+  count(atc) %>% arrange(atc.class_deliv,desc(n))
+```
+
+```{r}
+p <- ggplot(data) +
+  geom_histogram(aes(x=yearmon,fill=atc.class_deliv)) + 
+  facet_wrap( . ~ atc) + 
+  theme(axis.text.x = element_text(angle=90)) +  
+  scale_fill_manual(values = c("#00466BFF", "#ED0000FF", "#42B540FF", "#925E9FFF", "#0099B4FF", "#AD002AFF", "#ADB6B6FF")) +
+  scale_y_continuous(trans = 'log10', # log transforms y axis
+                     labels = scales::comma) + # prints values instead of exp 
+  labs(title = "Redeemed prescriptions of hormonal contraception, log transformed", 
+       subtitle = "Kanta registry, 2017-2021 (LNG-IUD 2013-2021)",
+       x = "Time of purchase", y = "Count")
+p
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/hc_purchases_orig.pdf"
+ggsave(filename=filename, p, width = 180, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+```
+Note that the Y-axis has been log transformed to visualize the smaller HC groups. No group has <5 purchases. The large dip in G03AA14 in 2019 is likely representative of the supply chain issues of Zoely in 2019.
+
+```{r}
+p <- data %>% 
+  group_by(atc.class_deliv, atc) %>%
+  count() %>% 
+  arrange(desc(n)) %>% 
+  ggplot(aes(x = atc.class_deliv, y = n, fill = atc)) + 
+  geom_bar(stat = "identity") + 
+  labs(title = "Redeemed prescriptions of hormonal contraception, 2017-2021 (LNG-IUD 2013-2021)",
+       subtitle = "Proportional ATC classification",
+       x = "Type of hormonal contraception", y = "Count") + 
+  theme_classic(base_size = 8) +
+  theme(
+    axis.text.x = element_text(angle = 70, hjust = 1),
+    panel.grid.major.y = element_line(color="gray", linetype= "dashed"),
+    panel.background = element_rect(fill = "white")) + 
+  scale_y_continuous(
+    labels = scales::comma_format(), 
+    expand = expansion(add = 0)) # removes empty space from figure edges (top and bottom, because this is y scale)
+p
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/hc_purchases_prop_orig.pdf"
+ggsave(filename=filename, p, width = 180, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+
+Most purchases are for COCs containing ethinylestradiol, followed by COCs containing estradiol and progestine. Even within the categories, there are products that are clearly the most popular. There are significantly less purchases for vaginal rings despite same expected renewal time (28 vs 3x28 day packages), same for patches which are even less common. This reflects that oral contraceptive preparations are more common than vaginal rings and transdermal patches. Implants and IUDs have comparatively few purchases as well, but these have longer expected renewal times (5 years). 
+
+
+```{r}
+# how many observations in each ATC group?
+data %>% group_by(atc) %>% count() %>% arrange(desc(n))
+
+p <- data %>% 
+  group_by(atc, atc.class_deliv) %>%
+  count() %>% 
+  arrange(desc(n)) %>% 
+  ggplot(aes(x = atc, y = n, fill= atc.class_deliv)) + 
+  scale_fill_manual(values = c("#00466BFF", "#ED0000FF", "#42B540FF", "#925E9FFF", "#0099B4FF", "#AD002AFF", "#ADB6B6FF")) +
+  geom_bar(stat = "identity") + 
+  labs(title = "Redeemed prescriptions of hormonal contraception, 2017-2021 (LNG-IUD 2013-2021)",
+       x = "ATC code", y = "Count") + 
+  theme_classic(base_size = 8) +
+  theme(
+    axis.text.x = element_text(angle = 70, hjust = 1),
+    panel.grid.major.y = element_line(color="gray", linetype= "dashed"),
+    panel.background = element_rect(fill = "white")) + 
+  scale_y_continuous(
+    labels = scales::comma_format(), 
+    expand = expansion(add = 0)) # removes empty space from figure edges (top and bottom, because this is y scale)
+p
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/hc_purchases_atc_orig.pdf"
+ggsave(filename=filename, p, width = 180, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+
+```
+
+
+## Number of products per person
+
+```{r}
+tmp <- data %>% 
+  group_by(shnro,atc) %>% 
+  count()
+```
+
+
+```{r}
+tmp %>% group_by(n) %>%  
+  count()  %>% rename(
+    "Count of some individual prescription for a person" = n,
+    n = nn
+  ) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+
+```
+
+There is large variability in number of purchases, which likely reflects the renewal time of certain prescriptions (i.e. most LNG-IUDs are purchased every 5-8 years, while some of the same types of OCs come in 1x28, 3x28 and 6x28 packages). 115477 purchases appear just once by case, meaning they will not be included in the study (have likely only tried the product, then stopped using) unless they are a type of LNG-IUDs or implant (due to long renewal time, purchases of only one product will be included). 
+
+```{r}
+tmp %>% group_by(shnro) %>% 
+  count() %>% 
+  group_by(n) %>% 
+  count() %>% rename(
+    "Count of purchases per person"=n,
+    n = nn
+  )  %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+
+```
+
+Additionally, 251725 persons have purchases for just one type of product, 68131 for two, 12593 for three, 1986 for four, 312 for five and 365 for 6-8 products.
+
+### Histogram of number of HC purchases 
+
+```{r}
+tmp_hist <- data %>% 
+  dplyr::select(shnro,atc,atc.class_deliv) %>% 
+  group_by(shnro,atc,atc.class_deliv) %>% 
+  count()
+
+
+p <- ggplot(tmp_hist) +
+  geom_histogram(aes(x=n,fill=atc.class_deliv)) + 
+  facet_wrap( . ~ atc) + 
+  theme(axis.text.x = element_text(angle=90)) +  
+  scale_fill_manual(values = c("#00466BFF","#ED0000FF", "#42b540FF","#925E9FFF", "#0099B4FF",  "#AD002AFF", "#ADB6B6FF")) +
+  scale_y_continuous(trans = 'log10', # log transforms y axis
+                     labels = scales::comma) + # prints values instead of exp 
+  labs(title = "Number of redeemed HC prescriptions per person, log transformed", 
+       subtitle = "Kanta registry, 2017-2021 (LNG-IUD 2013-2021)",
+       x = "Number of purchases", y = "Count")
+p
+
+# limit to study period 2019-2020 to use later 
+tmp_hist_study <- data %>% 
+  filter(toim.pvm >= 2019.000 & toim.pvm <= 2020.999) %>%  
+  dplyr::select(shnro,atc,atc.class_deliv) %>% 
+  group_by(shnro,atc,atc.class_deliv) %>% 
+  count()
+  
+p <- ggplot(tmp_hist_study) +
+  geom_histogram(aes(x=n,fill=atc.class_deliv)) + 
+  facet_wrap( . ~ atc) + 
+  theme(axis.text.x = element_text(angle=90)) +  
+  scale_fill_manual(values = c("#00466BFF","#ED0000FF", "#42b540FF","#925E9FFF", "#0099B4FF",  "#AD002AFF", "#ADB6B6FF")) +
+  scale_y_continuous(trans = 'log10', # log transforms y axis
+                     labels = scales::comma) + # prints values instead of exp 
+  labs(title = "Number of redeemed HC prescriptions per person during study period, log transformed", 
+       subtitle = "Kanta registry, 2019-2021",
+       x = "Number of purchases", y = "Count")
+p
+```
+
+```{r}
+tmp_hist <- data %>% 
+  dplyr::select(shnro,atc,atc.class_deliv) %>% 
+  group_by(shnro,atc,atc.class_deliv) %>% 
+  count()
+
+
+p <- ggplot(tmp_hist) +
+  geom_histogram(aes(x=n,fill=atc.class_deliv)) + 
+  facet_wrap( . ~ atc) + 
+  theme(axis.text.x = element_text(angle=90)) +  
+  scale_fill_manual(values = c("#00466BFF","#ED0000FF", "#42b540FF", "#0099B4FF", "#925E9FFF", "#AD002AFF", "#ADB6B6FF")) +
+  scale_y_continuous(trans = 'log10', # log transforms y axis
+                     labels = scales::comma) + # prints values instead of exp 
+  labs(title = "Number of redeemed HC prescriptions per person, log transformed", 
+       subtitle = "Kanta registry, 2017-2021 (LNG-IUD 2013-2021)",
+       x = "Number of purchases", y = "Count")
+p
+
+```
+
+### IUD accumulation
+
+Number of purchases for IUDs much lower, as the expected renewal time is longer than for OCs. Let's check how IUDs accumulate.
+
+```{r}
+
+tmp <- data %>% 
+  filter(IUD == TRUE) %>% 
+  arrange(toim.date) %>% 
+  group_by(yearmon) %>% 
+  select(shnro,yearmon) %>%
+  distinct() %>% 
+  summarise(
+    n=n(),
+  ) %>% 
+  mutate(
+        cumsum=cumsum(n)
+  )
+
+
+```
+
+
+```{r}
+p <- ggplot(tmp) +
+  geom_step(aes(x=yearmon,y=cumsum)) + 
+  theme(axis.text.x = element_text(angle=90)) +  
+  labs(title = "Redeemed prescriptions of LNG-IUDs, LNG-IUD 2013-2021",
+       x = "Time of purchase", y = "Count") 
+
+p
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/IUD_accumulation_orig.pdf"
+ggsave(filename=filename, p, width = 180, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+"Follow-up started on 01-01-2018 and censoring date was 31-12-2019" says modelsAnemiaResults.Rmd, why there are entries before 2018?" Because before 2017 only prescriptions that were reimbursed by Kela were input into this registry (the Mirena IUD was reimbursed for specific diagnosises, but not other types of hormonal contraception).
+
+How many have several IUD purchases?
+
+```{r}
+tmp <- data %>% 
+  filter(IUD == TRUE) %>% 
+  arrange(toim.date) %>% 
+  select(shnro,toim.date,seutukunta) %>%
+  distinct()
+
+tmp %>% nrow()
+```
+59914 units have several IUD purchases.
+
+```{r}
+# chunk contains personifiable data due to counts under 5, do not include in html 
+tmp %>% 
+  group_by(shnro) %>% 
+  count() %>% 
+  group_by(n) %>%
+  rename("Count of purchases per person" = n) %>%
+  count() %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+```
+53001 units have 1 IUD purchase, 3314 have two, 93 have three-five.
+
+What is the delay between 2 consecutive purchases?
+
+```{r}
+
+tmp2 <- tmp %>% 
+  group_by(shnro) %>% 
+  mutate(
+    time.lag = lag(toim.date)
+  ) %>% filter(
+    !is.na(time.lag) 
+  ) %>%   
+  ungroup() %>%
+  mutate(
+    diff.days = toim.date - time.lag,
+    Days = as.numeric(diff.days),
+    LagYears = Days/365,
+    Year = year(toim.date),
+    Year.numeric = as.numeric(toim.date)
+  )
+
+```
+
+
+```{r}
+p <- ggplot(tmp2) +
+  geom_histogram(aes(x=diff.days),binwidth = 100, fill = "#925E9F99")  + # binwidth chosen for privacy (<5 ovservations not visible) 
+  theme_classic() +
+  geom_vline(aes(xintercept = 1825), color = "#AD002AFF", linetype = "dashed", size = 1) +
+  geom_vline(aes(xintercept = 2920), color = "#AD002AFF", linetype = "dashed", size = 1) +
+  labs(title = "Time between two consecutive LNG-IUD purchases",
+       subtitle = "Red intercept: expected renewal time (5-8 years)",
+       x = "Number of days since previous purchase", y = "Count") 
+
+p
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/IUD_time_between_two_purch_orig.pdf"
+ggsave(filename=filename, p, width = 180, height = 120, units = "mm", dpi = 600, scale = 1.0)
+```
+
+```{r}
+# hexplot preferrable over scatter plot, as scatter plot contains identifiable data points
+p <- ggplot(tmp2, aes(y=LagYears, x=toim.date)) + 
+  geom_hex(bins=50) +
+  labs(title = "Expected prescription renewal time, LNG-IUDs", x = "Date of purchase", y = "Time (years)")  
+p
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/LNG_purch_lag_orig.pdf"
+ggsave(filename=filename, p, width = 180, height = 120, units = "mm", dpi = 600, scale = 1.0)
+```
+
+The band at five years represents the expected renewal time, which at the time of the study was 5 years for the most used LNG-IUD (mirena, nowadays 8 years which is reflected in the high number of renewals between 5-8 years in the hexplot). But why do so many have two consecutive purchases (or have NAs been replaced by 0)? A complication of IUD insertion is expulsion, which is most common during the first year (heavy bleeding, for example, could cause expulsion). Most of these early renewals happened during the 2018-2021 period, but this was also the time of the most IUD purchases in general.
+
+```{r}
+# how many have a new purchase within 20 days?
+sum(table(tmp2[tmp2$Days <= 20, ]$Days))
+# how many total purchases?
+nrow(tmp2)
+# how many percent of total population?
+141/3506
+```
+
+4 % have a new purchase within 20 days. Is there any difference in municipality that would explain these fast renewal times?  
+
+```{r}
+# create a variable for renewal time <20 days
+tmp2 <- tmp2 %>% mutate(
+  short = case_when(
+    Days<20  ~ "yes",
+    TRUE  ~ "no"))
+
+
+p <- ggplot(tmp2) + 
+  aes(x = seutukunta, fill = short, by = seutukunta) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("#99B898","#E84A5F")) +
+  theme(
+    axis.text.x = element_text(),
+    panel.grid.major.y = element_line(color="gray", linetype= "dashed"),
+    panel.background = element_rect(fill = "white")) + 
+  scale_y_continuous(
+    labels = scales::comma_format(), 
+    expand = expansion(add = 0)) + # removes empty space from figure edges (top and bottom, because this is y scale)
+    labs(title = "IUD renewal time <20 days from first purchase", x = "Municipality", y = "Proportion of short renewal time")  +
+  theme_classic(base_size = 8) +
+  coord_flip()
+p
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/LNG_purch_lag_orig_municipality.pdf"
+ggsave(filename=filename, p, width = 180, height = 120, units = "mm", dpi = 600, scale = 1.0)
+```
+
+Low-populated regions in Lapland, North and South Ostrobothnia and Southwest Finland are over-represented. Is this related to having to bring their own IUD to the healthcare center as a "replacement"? O. Heikinheimo believes this is the likely reason. One thing to note, is that we do not have purchase data from the individuals who receive the free first IUD from their local primary healthcare provider. 
+
+## Age and HC use
+
+Next let's check distribution of HC use and type by age
+
+```{r}
+# add n for different HC groups in the data set
+
+tmp.n <- data %>% 
+  group_by(atc.class_deliv) %>% 
+  summarise(n.hc.type=n())
+```
+
+
+```{r}
+data <- data %>% 
+  group_by(atc) %>% 
+  mutate(mean_age = mean(age, na.rm = TRUE))
+
+p <- ggplot(data) +
+  geom_density(aes(x=age,fill=atc.class_deliv), alpha=0.6) +
+  facet_wrap( . ~ atc) +
+  scale_fill_manual(values = c("#00466BFF","#ED0000FF", "#42b540FF", "#925E9FFF", "#0099B4FF", "#AD002AFF", "#ADB6B6FF")) +
+  geom_vline(data = data, aes(xintercept = mean_age), color = "darkblue", linetype = "dashed") +
+  theme(axis.text.x = element_text(angle=90),
+        panel.grid.major.y = element_line(color="gray", linetype= "dashed"),
+        panel.background = element_rect(fill = "white"))  +
+  labs(title = "Age by hormonal contraception type", 
+       x = "Age")  
+
+p
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/density_age_atc_orig.pdf"
+ggsave(filename=filename, p, width = 180, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+While most of the density plots have similar shapes, some types of EE (G03AB03 and G03AB06; last purchases during 2019) and E2 (G03AB08) have density plots that are heavier at the older end of our cohort. For the EE products, this could be due to the products being phased out during the time of our study (i.e. this would have been known some time before discontinuation, and therefore it would no longer be prescribed to new users). The E2 product is a sequential product (proportion of E2/progestin varies by tablet to mimic the patient's natural menstrual cycle), as opposed to the other products in this study. 
+
+A product that has been on the market for a long time is more likely to be prescribed to an older demographic, as you would not change a product that has been working well. Furthermore, a new product on the market is more likely to be prescribed to a younger demographic, as they would only be starting out with HC use and would not have experience with the products that have been on the market for longer. 
+
+
+
+```{r}
+p <- ggplot(data, aes(atc.class_deliv, age, fill=atc.class_deliv)) +  
+  scale_fill_manual(values = c("#00466BFF","#ED0000FF", "#42b540FF", "#925E9FFF", "#0099B4FF", "#AD002AFF", "#ADB6B6FF")) +
+  geom_boxplot(outlier.shape = NA) + # a few outliers removed for privacy
+  labs(title = "Median age by hormonal contraception purchase", 
+       x = "Hormonal contraception classification",
+       y = "Age")  
+
+p
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/boxplot_age_hc_orig.pdf"
+ggsave(filename=filename, p, width = 180, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+IUD-users trend older compared to other types of HC users, which could reflect it being used for treatment of HMB due to anovulation in the months-years leading up to menopause.
+
+```{r}
+p <- ggplot(data, aes(x= age, fill = atc.class_deliv)) + 
+  geom_histogram(postition = "dodge", binwidth = 1) +
+  facet_grid(~atc.class_deliv) +
+  theme_classic() +
+  scale_y_continuous(trans = 'log10', # log transforms y axis for easier interpretation
+   labels = scales::comma) + # prints values instead of exp 
+  scale_fill_manual(values = c("#00466BFF","#ED0000FF", "#42b540FF", "#925E9FFF", "#0099B4FF", "#AD002AFF", "#ADB6B6FF")) +
+  labs(title = "Age distribution by hormonal contraception purchase",
+       subtitle = "Log transformed Y axis",
+       x = "Age", y = "Frequency")
+p
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/histo_hc_age_orig.pdf"
+ggsave(filename=filename, p, width = 180, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+
+```
+
+Combined contraceptive users (EE, E2, patch and ring) users trend younger, as can be seen in the skewness of the histograms. 
+
+## Municipality and HC use 
+
+```{r}
+# calculate 
+tmp.n <- data %>% 
+  group_by(seutukunta) %>% 
+  summarise(n.seutu=n())
+
+# calculate medians
+data <- data %>% 
+  group_by(seutukunta) %>% 
+  mutate(mean_age = mean(age, na.rm = TRUE))
+
+
+p <- ggplot(data) +
+  geom_density(aes(x=age, fill = seutukunta, color = seutukunta), color = "#1B1919FF", fill = "#1B191999") +  
+  facet_wrap( . ~ seutukunta) +
+  theme(axis.text.x = element_text(angle=90)) +
+  geom_text(data = tmp.n, aes(x = 35, y = 0.06, label = n.seutu), size = 2) + # add n to facets
+  theme_classic(base_size = 6) +
+  geom_vline(data = data, aes(xintercept = mean_age), color = "darkred", linetype = "dashed") + # add mean age to facets
+  labs(title = "Age by municipality of residence", 
+       subtitle = "Count, blue intercept for mean age",
+       x = "Municipality of residence", 
+       y = "Proportional number of redeemed prescriptions") 
+
+
+p
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/age_municipality_orig.pdf"
+ggsave(filename=filename, p, width = 180, height = 120, units = "mm", dpi = 600, scale = 1.0)
+```
+
+Age distribution varies somewhat between municipality, with university cities and larger cities having a higher proportion of <30-year-olds compared to smaller cities and towns. Overall, the age distribution looks similar across the cohort.
+
+Some municipalities offer free contraception to women <25 years of age.
+
+```{r}
+# proportional HC use
+p <- ggplot(data) + 
+  aes(x = seutukunta, fill = atc.class_deliv, by = seutukunta) +
+  scale_fill_manual(values = c("#00466BFF","#ED0000FF", "#42b540FF", "#925E9FFF", "#0099B4FF", "#AD002AFF", "#ADB6B6FF")) +
+  geom_bar(position = "fill") +
+  theme_classic(base_size = 6) +
+  theme(
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major.y = element_line(color="gray", linetype= "dashed"),
+    panel.background = element_rect(fill = "white")) + 
+  scale_y_continuous(
+    labels = scales::comma_format(), 
+    expand = expansion(add = 0)) + # removes empty space from figure edges (top and bottom, because this is y scale)
+    labs(title = "Proportion of hormonal contraceptive type by municipality of residence", 
+         subtitle = "Kanta data on HC purchases, 2017-2021 (LNG-IUD 2013-2021)",
+         x = "Municipality of residence", 
+         y = "Proportional number of redeemed prescriptions") +
+  coord_flip()
+p
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/HC_municipality_prop_orig.pdf"
+ggsave(filename=filename, p, width = 180, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+
+# Overview of study data
+
+FinOCC population of N=588 712 Finnish women aged 15-55 years old. Anemia cases based on AvoHILMO (ICD-10 and ICPC2) and HILMO (ICD-10) diagnoses between January 1st 2019 and December 31st 2020 were included in the study. The endpoint event (which ever occurred first during follow-up) were observed as D50 (ICD-10) or B80 (ICPC2 code). Individual with events before January 1st 2019 were excluded. 
+
+Based on Jari Haukka's work, we constructed a nested case-control (NCC) design with five controls for each case, matched by age (one year caliber) and site of residence. We excluded any case or control who was pregnant in one year before end-point event.
+
+```{r}
+data <- anemia.dt
+
+# add new variable levels 
+
+data$hc.type <-
+  ifelse(anemia.dt$Classification == "COC_EE", "Combined oral contraceptives, EE",
+  ifelse(anemia.dt$Classification == "COC_E2", "Combined oral contraceptives, E2",  
+  ifelse(anemia.dt$Classification == "POC", "Progestin-only oral contraceptives",
+  ifelse(anemia.dt$Classification == "IUD", "Hormonal intrauterine device",
+  ifelse(anemia.dt$Classification == "ring", "Vaginal ring",
+  ifelse(anemia.dt$Classification == "patch", "Contraceptive patch",
+  ifelse(anemia.dt$Classification == "implant", "Contraceptive implant",
+  ifelse(anemia.dt$Classification == "no", "No hormonal contraception", NA))))))))
+
+# not needed for current code, save for possible future use
+# data$hc.type <-
+#   ifelse(anemia.dt$G02BA03.i.2 == 1, "Hormonal intrauterine device",
+#   ifelse(anemia.dt$G02BB01.i.2 == 1, "Vaginal ring",
+#   ifelse(anemia.dt$G03AA07.i.2 == 1, "Combined oral contraceptives, EE",
+#   ifelse(anemia.dt$G03AA09.i.2 == 1, "Combined oral contraceptives, EE",
+#   ifelse(anemia.dt$G03AA10.i.2 == 1, "Combined oral contraceptives, EE",
+#   ifelse(anemia.dt$G03AA11.i.2 == 1, "Combined oral contraceptives, EE",
+#   ifelse(anemia.dt$G03AA12.i.2 ==  1, "Combined oral contraceptives, EE",
+#   ifelse(anemia.dt$G03AA13.i.2 == 1, "Contraceptive  patch",
+#   ifelse(anemia.dt$G03AA14.i.2 == 1, "Combined oral contraceptives, E2",
+#   ifelse(anemia.dt$G03AA16.i.2 == 1, "Combined oral contraceptives, EE",
+#   ifelse(anemia.dt$G03AB03.i.2 == 1, "Combined oral contraceptives, EE",
+#   ifelse(anemia.dt$G03AB05.i.2 == 1, "Combined oral contraceptives, EE",
+#   ifelse(anemia.dt$G03AB06.i.2 == 1, "Combined oral contraceptives, EE",
+#   ifelse(anemia.dt$G03AB08.i.2 == 1, "Combined oral contraceptives, E2",
+#   ifelse(anemia.dt$G03AC01.i.2 == 1, "Progestin-only oral contraceptives",
+#   ifelse(anemia.dt$G03AC03.i.2 == 1, "Contraceptive implant",
+#   ifelse(anemia.dt$G03AC08.i.2 == 1, "Contraceptive implant",
+#   ifelse(anemia.dt$G03AC09.i.2 == 1, "Progestin-only oral contraceptives",
+#   ifelse(anemia.dt$G03AC10.i.2 == 1, "Progestin-only oral contraceptives",
+#   ifelse(anemia.dt$G03HB01.i.2 == 1, "Combined oral contraceptives, EE", "No hormonal contraception"))))))))))))))))))))
+
+```
+
+No NA present.
+
+## Population description
+
+
+### Table 1
+
+Kela reimbursment codes include the following diagnoses:
+*  SK103: Diabetes mellitus; E10-E14, E89.1 
+*  SK104: Hypothyreosis; C73, E03, E89.0  
+*  SK115: Breast cancer; C50, D05.1   
+*  SK117: Leukemia, lymphoma and other malignancy related to blood or bone marrow; C81-C85, C88, C90-C96, D45-D47, D72.1, D75 
+*  SK128: Gynecologic cancer; D39, C51-C58 
+*  SK130: Other malignancies; C00-C26, C30-C34, C37-C41, C43-C49, C64-C80, C97 (list excluded malignancies of male reproductive organs)
+*  SK202: Connective tissue disease; A04.6, A39.8, A50.5, D76, H20, H30, I33.0, I40.8, J84, K50.9, K51.9, K73.2, K74.3, K75.4, K83.0, L40.5, M02, M05, M06, M08, M13, M30-M35, M45, M46.1, M46.9, M86.6, M94.1, N03, N04, Q44.2  
+*  SK208: IBD; K50, K51  
+*  SK215: Diabetes mellitus, other treatment; E10-E14, E89.1
+
+Available ICD codes:
+* E66 Obesity
+* I80 Phlebitis and thrombophlebitis
+* I82 Other venous embolism and thrombosis
+* I26 Pulmonary embolism
+* I21 Myocardial infaction
+* I63 Cerebral infarction
+* D25 Leiomyoma 
+* N80 Endometriosis 
+* N84 Polyps
+* N85 Hyperplasia 
+* N92 HMB
+* N93 Other abnormal uterine/vaginal bleeding 
+
+
+```{r}
+# add variable for any dg of HMB
+data <- data %>% 
+  mutate(any.HMB = as.integer(D25|N80|N84|N85|N92|N93))
+
+# add variable for any dg of thrombosis/embolism
+data <- data %>% 
+  mutate(any.thrombosis = as.integer(I80|I81|I82|I26|I21|I63)) 
+
+
+```
+
+
+```{r, message=FALSE, warning=FALSE, results='asis'}
+# data for table 1 to rename variables
+table1data <- data %>% 
+  rename("Age" = age,
+         "Marital status" = sivsr,
+         "Socio-economic group" = soseR,
+         "Education" = ututkuR,
+         "Diabetes Mellitus (Kela code 103 or 215)" = SK103, # both fall under same code
+         "Hypothyroidism (Kela code 104)" = SK104,
+         "Breast cancer (Kela code 115)" = SK115, 
+         "Leukemia, lymphoma or other malignancy of blood or bone marrow (Kela code 117)" = SK117,
+         "Gynecologic cancer (Kela code 128)" = SK128,
+         "Other malignancy (Kela code 130)" = SK130,
+         "Connective tissue disease (Kela code 202)" = SK202,
+         "Inflammatory bowel disease (Kela code 208)" = SK208,
+         "Thrombosis, embolism or related endpoint event (ICD-10 code I80, I81, I82, I26, I21, or I63)" = any.thrombosis,
+         # "Phlebitis or thrombophlebitis (ICD-10 code I80)" = I80,
+         # "Other venous embolism and thrombosis (ICD-10 code I82)" = I82,
+         # "Pulmonary embolism (ICD-10 code I26)" = I26,
+         # "Myocardial infaction (ICD-10 code I21)" = I21,
+         # "Cerebral infarction (ICD-10 code I63)" = I63,
+         "Heavy menstrual bleeding (ICD-10 code D25, N80, N84, N85, N92, or N93)" = any.HMB,
+         # "Leiomyoma of uterus (ICD-10 code D25)" = D25,
+         # "Endometriosis (ICD-10 code N80)" = N80,
+         # "Polyp of female genital tract (ICD-10 code N84)" = N84,
+         # "Hyperplasia of uterus (ICD-10 code N85)" = N85,
+         # "Excessive and frequent menstruation (ICD-10 code N92)" = N92,
+         # "Other abnormal uterine and vaginal bleeding (ICD-10 code N93)" = N93,
+         "Obesity (ICD-10 code E66)" = E66,
+         "Hormonal contraception use" = hc.type,
+         "Product by ATC code" = HormonalContraception,
+         "History of childbirth" = N.deliveries,
+         "Any history of childbirth" = N.deliveries.1
+         ) 
+
+
+ # recode variables for pretty table
+table1data$anemia <- ifelse(table1data$Fail == 1, "Cases", "Controls")
+
+
+tmp.var<-c("Age",
+           "History of childbirth")
+tmp.var.1<-c( "Any history of childbirth",
+            "Marital status", 
+             "Socio-economic group", 
+             "Education", 
+             "Diabetes Mellitus (Kela code 103 or 215)", 
+             "Hypothyroidism (Kela code 104)", 
+             "Breast cancer (Kela code 115)", 
+             "Leukemia, lymphoma or other malignancy of blood or bone marrow (Kela code 117)", 
+             "Gynecologic cancer (Kela code 128)", 
+             "Other malignancy (Kela code 130)", 
+             "Connective tissue disease (Kela code 202)", 
+             "Inflammatory bowel disease (Kela code 208)", 
+             "Thrombosis, embolism or related endpoint event (ICD-10 code I80, I81, I82, I26, I21, or I63)",
+             "Obesity (ICD-10 code E66)",
+             "Heavy menstrual bleeding (ICD-10 code D25, N80, N84, N85, N92, or N93)",
+             # "Phlebitis or thrombophlebitis (ICD-10 code I80)", 
+             # "Other venous embolism and thrombosis (ICD-10 code I82)", 
+             # "Pulmonary embolism (ICD-10 code I26)", 
+             # "Myocardial infaction (ICD-10 code I21)", 
+             # "Leiomyoma of uterus (ICD-10 code D25)",
+             # "Endometriosis (ICD-10 code N80)",
+             # "Heavy menstrual bleeding",
+             # "Polyp of female genital tract (ICD-10 code N84)",
+             # "Hyperplasia of uterus (ICD-10 code N85)",
+             # "Excessive and frequent menstruation (ICD-10 code N92)",
+             # "Other abnormal uterine and vaginal bleeding (ICD-10 code N93)",
+             # "Cerebral infarction (ICD-10 code I63)",
+             "Hormonal contraception use",
+             "Product by ATC code" 
+         
+             )
+
+#non_normal_vars <- c("History of childbirth")
+
+tmp.Table1<-CreateTableOne(vars = c(tmp.var,tmp.var.1),
+                                 factorVars = c(tmp.var.1),
+                                 strata = "anemia",addOverall = TRUE,includeNA = TRUE,
+                                 data=table1data)
+
+apu.tab<-tmp.Table1
+
+tmp.fun<-function(x){
+  x[,"freq"]<-ifelse(x[,"freq"]<5,999999,x[,"freq"])
+  x
+}
+apu<-lapply(apu.tab$CatTable[[1]],tmp.fun)
+apu.tab$CatTable[[1]]<-apu
+
+apu<-lapply(apu.tab$CatTable[[2]],tmp.fun)
+apu.tab$CatTable[[2]]<-apu
+
+apu<-lapply(apu.tab$CatTable[[3]],tmp.fun)
+apu.tab$CatTable[[3]]<-apu
+ 
+
+apu<-print(apu.tab,
+#           nonnormal = non_normal_vars,
+           printToggle = FALSE)
+knitr::kable(apu,caption = "Table 1. Anemia nested case-control study population, matching by age and municipality. Frequencies under 5 replaced by 99999")
+
+write.table(apu,
+            file = paste0("W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_tabs/table1"),sep="/t")
+```
+
+There is a statistical significant difference in prevalence of chronic disease between cases and controls. Based on this result and our directed acyclic graph experiments, we will adjust for chronic disease in model 2. 
+
+Hormonal contraception use significantly less common among cases compared to controls (almost 15 %).
+
+### Set size
+
+```{r}
+table(table(anemia.dt$Set)) # Set size
+```
+
+The  vast majority of sets have at least three controls, most 5.
+
+## Number of purchases
+
+
+```{r}
+temp_hist <- tmp_hist_study
+
+# limit earlier dataframe to study participants
+tmp.shnro <- unique(anemia.dt$shnro) # get the unique Set numbers of the filtered rows
+temp_hist <- temp_hist[temp_hist$shnro %in% tmp.shnro, ] 
+
+
+p <- ggplot(temp_hist) +
+  geom_histogram(aes(x=n,fill=atc.class_deliv)) + 
+  facet_wrap( . ~ atc) + 
+  theme(axis.text.x = element_text(angle=90)) +  
+  scale_fill_manual(values = c("#00466BFF","#ED0000FF", "#42b540FF","#925E9FFF", "#0099B4FF",  "#AD002AFF", "#ADB6B6FF")) +
+  scale_y_continuous(trans = 'log10', # log transforms y axis
+                     labels = scales::comma) + # prints values instead of exp 
+  labs(x = "Number of purchases", y = "Count")
+p
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/nb_products.pdf"
+ggsave(filename=filename, p, width = 180, height = 180, units = "mm", dpi = 600, scale = 1.0)
+```
+
+
+## Municipality and HC use 
+
+Some municipalities offer free hormonal contraception for some age-groups, or after childbirth/abortion. Let's see how HC use differs by municipality, starting by age distribution by municipality.
+
+
+```{r}
+# calculate 
+tmp.n <- data %>% 
+  group_by(seutukunta) %>% 
+  summarise(n.seutu=n())
+
+# calculate medians
+data <- data %>% 
+  group_by(seutukunta) %>% 
+  mutate(mean_age = mean(age, na.rm = TRUE))
+
+
+p <- ggplot(data) +
+  geom_density(aes(x=age, fill = seutukunta, color = seutukunta), color = "#1B1919FF", fill = "#1B191999") +
+  facet_wrap( . ~ seutukunta) +
+  theme(axis.text.x = element_text(angle=90)) +
+  geom_text(data = tmp.n, aes(x = 30, y = 0.2, label = n.seutu), size = 4) + # add n to facets
+  geom_vline(data = data, aes(xintercept = mean_age), color = "darkred", linetype = "dashed") + # add mean age to facets
+  theme_classic(base_size = 10) +
+  labs(x = "Municipality of residence", 
+       y = "Proportional number of redeemed prescriptions") 
+
+
+p
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/age_municipality.pdf"
+ggsave(filename=filename, p, width = 180, height = 180, units = "mm", dpi = 600, scale = 1.0)
+
+
+```
+
+The age distribution between the municipalities differs somewhat. The difference seems to come from the smaller municipalities due to low participation (some municipalities only represented by one set). As some municipalities offer free contraception to women <25 years of age, we will want to do sensitivity analysis by removing these smaller municipalities. For example, Åland islands and Eastern Lapland participants have a skew to the age density plot, which might explain the earlier use of HC by municipality density plot. 
+
+How many sets do we have per municipality?
+
+```{r}
+# how many observations in each ATC group?
+data %>% group_by(seutukunta) %>% count() %>% arrange(desc(n))
+
+p <- data %>% 
+  group_by(seutukunta, color = "#1B1919FF", fill = "#1B191999", alpha = 0.5) %>%
+  count() %>% 
+  arrange(desc(n)) %>% 
+  ggplot(aes(x = seutukunta, y = n)) + 
+  geom_bar(stat = "identity") + 
+  labs(
+    title = "Number of sets per municipality, log transformed Y axis",
+    subtitle = "Study data, 2019-2020",
+    x = "Municipality of residence", 
+    y = "Count") + 
+  theme_classic(base_size = 8) +
+  theme(
+    axis.text.x = element_text(angle = 70, hjust = 1),
+    panel.grid.major.y = element_line(color="gray", linetype= "dashed"),
+    panel.background = element_rect(fill = "white")) + 
+  scale_y_continuous(
+    trans = 'log10', # log transforms y axis
+    labels = scales::comma_format(), 
+    expand = expansion(add = 0)) # removes empty space from figure edges (top and bottom, because this is y scale)
+p
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/count_set_municipality.pdf"
+ggsave(filename=filename, p, width = 180, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+
+```
+
+Larger cities are over-represented, particularly the university cities, but that is expected due to the high number of young individuals living in those areas.  
+
+
+```{r}
+# proportional HC use
+p1 <- ggplot(data) + 
+  aes(x = seutukunta, fill = Classification, by = seutukunta) +
+  scale_fill_manual(values = c("#FDAF91FF", "#42b540FF", "#925E9FFF", "#00466BFF","#ED0000FF", "#AD002AFF", "#ADB6B6FF", "#0099B4FF")) +
+  geom_bar(position = "fill") +
+  theme(
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major.y = element_line(color="gray", linetype= "dashed"),
+    panel.background = element_rect(fill = "white")) + 
+    theme_classic(base_size = 8) +
+  scale_y_continuous(
+    labels = scales::comma_format(), 
+    expand = expansion(add = 0)) + # removes empty space from figure edges (top and bottom, because this is y scale)
+    labs(title = "Proportion of hormonal contraceptive type by municipality of residence", 
+         subtitle = "Study data, 2019-2020",
+         x = "Municipality of residence", 
+         y = "Proportional number of redeemed prescriptions") +
+  coord_flip()
+p1
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/HC_municipality_prop.pdf"
+ggsave(filename=filename, p1, width = 180, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+
+```{r}
+p2 <- plot_grid(p, p1)
+p2
+
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/HC_municipality_age.pdf"
+ggsave(filename=filename, p2, width = 360, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+
+Similarly to what we saw for the entire cohort, there is variability in the distribution of hormonal contraception between the different municipalities due to low population (some municipalities are only represented by one of a few sets). These municipalities are the ones that also have the largest age variability. An option for a sensitivity test would also be to only match for age, and see if the results differ when leaving out municipality from the matching. 
+
+```{r}
+data_no_hc <- data %>% 
+  filter((Classification!="no")) 
+
+
+# proportional HC use, remove nonusers
+p1 <- ggplot(data_no_hc) + 
+  aes(x = seutukunta, fill = Classification, by = seutukunta) +
+  scale_fill_manual(values = c("#42b540FF", "#925E9FFF", "#00466BFF","#ED0000FF", "#AD002AFF", "#ADB6B6FF", "#0099B4FF")) +
+  geom_bar(position = "fill") +
+  theme(
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major.y = element_line(color="gray", linetype= "dashed"),
+    panel.background = element_rect(fill = "white")) + 
+    theme_classic(base_size = 6) +
+  scale_y_continuous(
+    labels = scales::comma_format(), 
+    expand = expansion(add = 0)) + # removes empty space from figure edges (top and bottom, because this is y scale)
+    labs(title = "Proportion of hormonal contraceptive type by municipality of residence", 
+         subtitle = "Study data, 2019-2020",
+         x = "Municipality of residence", 
+         y = "Proportional number of redeemed prescriptions") +
+  coord_flip()
+p1
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/HC_municipality_prop_excl_nonuse.pdf"
+ggsave(filename=filename, p1, width = 180, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+Same picture, but with non-users removed for better visualization. Distribution in groups 211 and 212 (Åland islands) and 194 (Eastern Lapland) look very different compared to the others, likely due to low population which causes over-representation of certain HC groups. Based on info from www.ahs.ax and lapha.fi, it seems that everyone younger than 25 years are provided free contraceptives (Åland LARC types, Lapland all forms), on Åland islands also old those who have given birth in the last 6 months. It is also likely the individual would like to continue using they same type of contraceptive they were provided for free. Additionally, it might be possible that due to the low number of prescribing doctors on the island that some forms of contraceptives get over-represented. 
+
+```{r}
+p2 <- plot_grid(p, p1)
+p2
+
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/HC_municipality_age_excl_nonuse.pdf"
+ggsave(filename=filename, p2, width = 360, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+
+## Anemia 
+
+
+
+```{r}
+# only cases
+data_cases <- data %>% 
+  filter(Fail=="0")
+
+# only controls
+data_controls <- data %>% 
+  filter(Fail=="1")
+
+```
+
+
+### Anemia by age
+
+
+```{r}
+
+p <- ggplot(table1data, aes(x = Age, fill = anemia, color = anemia)) +
+  geom_histogram(aes(y = ..density..), color ="black", fill="white") +
+  scale_fill_manual(values = c("#ed0000", "#42b540")) +
+  geom_density(alpha = 0.4) +  
+  theme_classic() + 
+  facet_wrap( . ~ anemia) +
+  theme(axis.text.x = element_text(angle=70))
+p
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/density_anemia_age.pdf"
+ggsave(filename=filename, p, width = 180, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+```
+The density plots are not fully identical due to differences in set size.
+
+### Anemia by HC
+
+
+```{r}
+# proportional HC use in cases
+p1 <-  data %>% 
+  filter(Fail=="0")  %>% 
+  mutate(Classification = recode(Classification,
+         "no" = "No hormonal contraceptive use",
+         "implant" = "Contraceptive implant",
+         "IUD" = "Hormonal intrauterine device",
+         "COC_EE" = "Combined oral contraceptives, EE",
+         "COC_E2" = "Combined oral contraceptives, E2",
+         "POC" = "Progestin-only oral contraceptives",
+         "ring" = "Vaginal ring",
+         "patch" = "Contraceptive patch"))
+
+p1 <- ggplot(p1)  + 
+  aes(x = Classification, fill=Classification) +
+  geom_bar(aes(y = 100 * (..count..)/sum(..count..))) +
+  scale_fill_manual(values = c("#FDAF91FF", "#42b540FF", "#925E9FFF", "#00466BFF","#ED0000FF", "#AD002AFF", "#ADB6B6FF", "#0099B4FF")) +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 70, hjust = 1),
+    panel.grid.major.y = element_line(color="gray", linetype= "dashed"),
+    panel.background = element_rect(fill = "white")) + 
+  scale_y_continuous(
+    labels = function(x) paste(x, "%"),
+    limits = c(0,80),
+    ) + # removes empty space from figure edges (top and bottom, because this is y scale)
+    labs(title = "Controls", x = " ", y = "Proportion")  
+p1
+
+# proportional HC use in controls
+p2 <-  data %>% 
+  filter(Fail=="1") %>% 
+  mutate(Classification = recode(Classification,
+         "no" = "No hormonal contraceptive use",
+         "implant" = "Contraceptive implant",
+         "IUD" = "Hormonal intrauterine device",
+         "COC_EE" = "Combined oral contraceptives, EE",
+         "COC_E2" = "Combined oral contraceptives, E2",
+         "POC" = "Progestin-only oral contraceptives",
+         "ring" = "Vaginal ring",
+         "patch" = "Contraceptive patch"))
+
+
+p2 <- ggplot(p2)  + 
+  aes(x = Classification, fill=Classification) +
+  geom_bar(aes(y = 100 * (..count..)/sum(..count..))) +
+  scale_fill_manual(values = c("#FDAF91FF", "#42b540FF", "#925E9FFF", "#00466BFF","#ED0000FF", "#AD002AFF", "#ADB6B6FF", "#0099B4FF")) +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 70, hjust = 1),
+    panel.grid.major.y = element_line(color="gray", linetype= "dashed"),
+    panel.background = element_rect(fill = "white")) + 
+  scale_y_continuous(
+    labels = function(x) paste(x, "%"),
+    limits = c(0,80),
+    ) + # removes empty space from figure edges (top and bottom, because this is y scale)
+    labs(title = "Cases", x = " ", y = " ")  
+p2
+
+# combine to one figure
+p3 <- plot_grid(p1, p2)
+p3
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/barplot_anemia_hc.pdf"
+ggsave(filename=filename, p3, width = 180, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+Non-use of HC significantly more common among cases.   
+
+## Age
+
+
+### Figure 2 (use of HC in the different age groups)
+
+
+```{r}
+# make an age category variable
+Fig2 <- data %>% 
+  mutate(age_group = case_when(age <20 ~ "15-20",
+                               age <25 ~ "21-24",
+                               age <30 ~ "25-29",
+                               age <35 ~ "30-34",
+                               age <40 ~ "35-39",
+                               age <45 ~ "40-44",
+                               age <50 ~ "45-49",
+                               age <56 ~ "50-55")) 
+
+```
+
+```{r}
+Fig2 <- Fig2 %>% 
+  filter(HormonalContraception != "G03AB03")
+
+Fig2 <- Fig2 %>% 
+  filter(HormonalContraception != "G03AC10")
+```
+
+
+```{r}
+
+Fig2 <- Fig2 %>% 
+  mutate(HormonalContraception = recode(HormonalContraception,
+    "no" = "No hormonal contraception", 
+    "G02BA03" = "Plastic IUD:\nlevonorgestrel",
+    "G02BB01" = "Vaginal ring: etonogestrel\nand ethinylestradiol",
+    "G03AA07" = "OC: levonorgestrel and\nethinylestradiol",
+    "G03AA09" = "OC: desogestrel and\nethinylestradiol",
+    "G03AA10" = "OC: gestodene and\nethinylestradiol",
+    "G03AA12" = "OC: drospirenone and\nethinylestradiol",
+    "G03AA13" = "Patch: norelgestromin\nand ethinylestradiol",
+    "G03AA14" = "OC: nomegestrol and\nestradiol",
+    "G03AA16" = "OC: dienogest and\nethinylestradiol",
+    "G03AB03" = "OC: levonorgestrel and\nethinylestradiol",
+    "G03AB08" = "OC: dienogest and\nestradiol",
+    "G03AC01" = "OC: norethisterone",
+    "G03AC03" = "Implant: levonorgestrel",
+    "G03AC08" = "Implant: etonogestrel",
+    "G03AC09" = "OC: desogestrel",
+    "G03AC10" = "OC: drospirenone",
+    "G03HB01" = "OC: cyproterone and\nethinylestradiol"
+  ))
+```
+
+
+
+```{r}
+Fig2 <- Fig2 %>% 
+  group_by(HormonalContraception) %>% 
+  mutate(mean_age = mean(age, na.rm = TRUE)) %>%
+  mutate(hc.type=factor(hc.type, levels=c(
+    "No hormonal contraception",
+    "Combined oral contraceptives, EE",
+    "Combined oral contraceptives, E2",
+    "Progestin-only oral contraceptives",
+    "Hormonal intrauterine device",
+    "Vaginal ring",
+    "Contraceptive patch",
+    "Contraceptive implant"
+    )))
+
+tmp.n <- Fig2 %>% 
+  group_by(HormonalContraception) %>% 
+  summarise(n.HormonalContraception=n())
+```
+
+
+```{r}
+Fig2 %>% group_by(HormonalContraception,mean_age) %>% 
+  count(HormonalContraception) %>% arrange(HormonalContraception,desc(n))
+```
+
+```{r}
+p <- ggplot(Fig2, aes(x= age, fill = HormonalContraception)) + 
+  geom_density(alpha = 0.8) +
+  facet_wrap(~HormonalContraception, 
+             ncol=4, 
+           # scales = "free_y"
+           ) +
+  geom_vline(data = Fig2, 
+             aes(xintercept = mean_age), 
+             color = "darkred", 
+             linetype = "dashed") + # add mean age to facets
+  scale_fill_manual(values = c("#FDAF91FF", "#ED0000FF", "#ED0000FF", "#ED0000FF", "#ED0000FF","#ED0000FF","#ED0000FF", "#00466BFF", "#00466BFF",  "#AD002AFF", "#AD002AFF", "#ADB6B6FF", "#0099B4FF", "#925E9FFF" , "#42b540FF", "#42b540FF")) +
+  theme_classic(base_size = 11) +
+  theme(legend.position = "none") +
+  labs(x = "Age", 
+       y = "Frequency") +
+  geom_text(data = tmp.n, 
+            aes(
+              x = 45, 
+              y = 0.055, 
+              label = n.HormonalContraception), 
+            size = 5)
+p
+
+
+# save figure
+ filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/Fig2.pdf"
+ ggsave(filename=filename, p, width = 180, height = 180, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+
+
+, "#ED0000FF", "#00466BFF",  "#AD002AFF", "#925E9FFF", "#ADB6B6FF", "#0099B4FF" , "#42b540FF", "#42b540FF", "#42b540FF", "#ED0000FF", "#00466BFF",  "#AD002AFF", "#925E9FFF", "#ADB6B6FF", "#0099B4FF" , "#42b540FF", "#42b540FF", "#42b540FF"
+
+
+
+
+
+Next let's check distribution of HC use and type by age
+
+```{r}
+# make an age category variable
+data <- data %>% 
+  mutate(age_group = case_when(age <20 ~ "15-20",
+                               age <25 ~ "21-24",
+                               age <30 ~ "25-29",
+                               age <35 ~ "30-34",
+                               age <40 ~ "35-39",
+                               age <45 ~ "40-44",
+                               age <50 ~ "45-49",
+                               age <56 ~ "50-55")) 
+
+```
+
+
+```{r}
+data <- data %>% 
+  group_by(hc.type) %>% 
+  mutate(mean_age = mean(age, na.rm = TRUE)) 
+
+tmp.n <- data %>% 
+  group_by(hc.type) %>% 
+  summarise(n.hc.type=n())
+```
+
+
+
+```{r}
+p <- ggplot(data, aes(x= age, fill = hc.type)) + 
+  geom_histogram(aes(y = ..density..), color ="black", fill="white") +
+  geom_density(alpha = 0.6) +
+  facet_wrap(~hc.type, ncol=2) +
+  geom_vline(data = data, aes(xintercept = mean_age), color = "darkred", linetype = "dashed") + # add mean age to facets
+  scale_fill_manual(values = c("#00466BFF","#ED0000FF", "#42b540FF", "#0099B4FF", "#925E9FFF", "#FDAF91FF", "#AD002AFF", "#ADB6B6FF")) +
+  theme_classic(base_size = 8) +
+  theme(legend.position = "none") +
+  labs(title = "Age distribution by hormonal contraception use",
+       subtitle = "Study population, 2019-2020",
+       x = "Age", y = "Frequency") +
+  geom_text(data = tmp.n, aes(x = 50, y = 0.06, label = n.hc.type), size = 2)
+p
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/density_hc_age.pdf"
+ggsave(filename=filename, p, width = 180, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+```{r}
+p <- ggplot(data, aes(hc.type, age, fill=hc.type)) +
+  scale_fill_manual(values = c("#00466BFF","#ED0000FF", "#42b540FF", "#0099B4FF", "#925E9FFF", "#FDAF91FF", "#AD002AFF", "#ADB6B6FF")) +
+  theme_classic(base_size = 8) +
+  theme(
+    legend.position = "none",
+    panel.grid.major.y = element_line(color="gray", linetype= "dashed"),
+    panel.background = element_rect(fill = "white")) + 
+    theme(legend.position = "none") +
+  scale_x_discrete(labels = label_wrap(15)) +
+  labs(title = "Boxplot, age and hormonal contraception use",
+       subtitle = "Study population, 2019-2020",
+       x = "Hormonal contraception type", y = "Age") +
+  geom_boxplot(outlier.shape = NA)
+p
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/boxplot_age_hc.pdf"
+ggsave(filename=filename, p, width = 180, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+A few outliers in the EE group removed from graph for privacy. EE-users trend younger, as can be seen in the skewness of the histograms and the boxplot. In the density plots we can see a "dip" at around 30 year old, likely due to pregnancy/breastfeeding during this age.
+
+```{r }
+p_agecat <- ggplot(data) + 
+  aes(x = age_group, fill = hc.type, by = age_group) +
+  scale_fill_manual(values = c("#00466BFF","#ED0000FF", "#42b540FF", "#0099B4FF", "#925E9FFF", "#FDAF91FF", "#AD002AFF", "#ADB6B6FF")) +
+  geom_bar(position = "fill") +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major.y = element_line(color="gray", linetype= "dashed"),
+    panel.background = element_rect(fill = "white")) + 
+  scale_y_continuous(
+    labels = scales::comma_format(), 
+    expand = expansion(add = 0)) + # removes empty space from figure edges (top and bottom, because this is y scale)
+    labs(title = "Proportion of hormonal contraceptive type in different age groups", 
+         subtitle = "Study data, 2019-2020",
+         x = "Age group", 
+         y = "Proportional number of hormonal contraception") +
+  coord_flip()
+p_agecat
+
+```
+
+Same figure, remove non-users to better visualize HC groups:
+
+```{r}
+data_no_hc <- data %>% 
+  filter((Classification!="no")) 
+
+p_agecat_no <- ggplot(data_no_hc) + 
+  aes(x = age_group, fill = hc.type, by = age_group) +
+  scale_fill_manual(values = c("#00466BFF","#ED0000FF", "#42b540FF", "#0099B4FF", "#925E9FFF", "#AD002AFF", "#ADB6B6FF")) +
+  geom_bar(position = "fill") +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major.y = element_line(color="gray", linetype= "dashed"),
+    panel.background = element_rect(fill = "white")) + 
+  scale_y_continuous(
+    labels = scales::comma_format(), 
+    expand = expansion(add = 0)) + # removes empty space from figure edges (top and bottom, because this is y scale)
+    labs(title = "Proportion of hormonal contraceptive type in different age groups", 
+         subtitle = "Study data, 2019-2020, non-users removed",
+         x = "Age group", 
+         y = "Proportional number of hormonal contraception") +
+  coord_flip()
+p_agecat_no
+
+
+```
+COC with EE decreases and POC/COC with E2 increases as age increases. IUDs most common in the 35-49 age category.
+
+```{r}
+p_agecat_comb <- plot_grid(p_agecat_no, p_agecat)
+p_agecat_comb
+
+
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/HC_agecat.pdf"
+ggsave(filename=filename, p_agecat_comb, width = 360, height = 120, units = "mm", dpi = 600, scale = 1.0)
+```
+
+## History of pregnancy
+
+First let's see the age of our population by history of childbirth
+
+```{r}
+# remove 10 and more deliveries from figures due to low number
+data_nbpreg <- data %>% 
+  filter(N.deliveries<10)
+
+
+# calculate medians
+data_nbpreg <- data_nbpreg %>% 
+  group_by(N.deliveries) %>% 
+  mutate(mean_age = mean(age, na.rm = TRUE))
+
+# calculate n
+tmp.n <- data_nbpreg %>% 
+  group_by(N.deliveries) %>% 
+  summarise(n.deliv=n())
+
+
+
+p1 <- ggplot(data_nbpreg, aes(x = age)) +
+  geom_histogram(aes(y = ..density..), color ="black", fill="white") +
+  geom_density(alpha = 0.4, color = "#1B1919FF", fill = "#1B191999") +  
+  facet_wrap( . ~ N.deliveries) +
+  geom_text(data = tmp.n, aes(x = 47, y = 0.6, label = n.deliv), size = 3) + # add n to facets
+  theme(axis.text.x = element_text(angle=70)) +
+  labs(title = "Age by history of childbirth",
+       subtitle = "Study population, 2019-2020",
+       x =  "Age") +
+    geom_vline(data = data_nbpreg, aes(xintercept = mean_age), color = "darkred", linetype = "dashed")
+
+p1
+```
+```{r}
+p2 <- ggplot(data) + 
+  aes(x = N.deliveries.1, fill = hc.type, by = ututkuR) +
+  scale_fill_manual(values = c("#00466BFF","#ED0000FF", "#42b540FF", "#0099B4FF", "#925E9FFF", "#FDAF91FF", "#AD002AFF", "#ADB6B6FF")) +
+  geom_bar(position = "fill") +
+  theme(
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major.y = element_line(color="gray", linetype= "dashed"),
+    panel.background = element_rect(fill = "white")) + 
+  scale_y_continuous(
+    labels = scales::comma_format(), 
+    expand = expansion(add = 0)) + # removes empty space from figure edges (top and bottom, because this is y scale)
+    labs(title = "Proportion of hormonal contraceptive type by nb of childbirth", 
+         subtitle = "Study data, 2019-2020",
+         x = "Nb of childbirth", 
+         y = "Proportional number of hormonal contraception") +
+  coord_flip()
+p2
+
+```
+There is a substantial difference in use oh HC between women who have given birth vs the women who have not. Some of this effect likely stems from age.
+
+## Education and HC use 
+
+First let's see the age of our population by education status.
+
+```{r}
+# calculate medians
+data <- data %>% 
+  group_by(ututkuR) %>% 
+  mutate(mean_age = mean(age, na.rm = TRUE))
+
+# calculate n
+tmp.n <- data %>% 
+  group_by(ututkuR) %>% 
+  summarise(n.edu=n())
+
+
+p1 <- ggplot(data, aes(x = age)) +
+  geom_histogram(aes(y = ..density..), color ="black", fill="white") +
+  geom_density(alpha = 0.4, color = "#1B1919FF", fill = "#1B191999") +  
+  facet_wrap( . ~ ututkuR) +
+  geom_text(data = tmp.n, aes(x = 47, y = 0.15, label = n.edu), size = 3) + # add n to facets
+  theme(axis.text.x = element_text(angle=70)) +
+  labs(title = "Age by education",
+       subtitle = "Study population, 2019-2020",
+       x =  "Age") +
+    geom_vline(data = data, aes(xintercept = mean_age), color = "darkred", linetype = "dashed")
+
+p1
+```
+
+As expected, doctoral, post-secondary non-tertiary and short-cycle tertiary trend older while upper secondary trend younger.
+
+```{r}
+p2 <- ggplot(data) + 
+  aes(x = ututkuR, fill = hc.type, by = ututkuR) +
+  scale_fill_manual(values = c("#00466BFF","#ED0000FF", "#42b540FF", "#0099B4FF", "#925E9FFF", "#FDAF91FF", "#AD002AFF", "#ADB6B6FF")) +
+  geom_bar(position = "fill") +
+  theme(
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major.y = element_line(color="gray", linetype= "dashed"),
+    panel.background = element_rect(fill = "white")) + 
+  scale_y_continuous(
+    labels = scales::comma_format(), 
+    expand = expansion(add = 0)) + # removes empty space from figure edges (top and bottom, because this is y scale)
+    labs(title = "Proportion of hormonal contraceptive type by education level", 
+         subtitle = "Study data, 2019-2020",
+         x = "Education level", 
+         y = "Proportional number of hormonal contraception") +
+  coord_flip()
+p2
+
+```
+
+```{r}
+p3 <- plot_grid(p2, p1)
+p3
+
+
+
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/HC_edu.pdf"
+ggsave(filename=filename, p3, width = 360, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+Although some of the difference in HC use between different levels of education is likely to stem from the age difference and small group size, there does seem to be some difference between HC by education. 
+
+
+## Socioeconomic status and HC use 
+
+Income affects ability to purchase HC. One particularly interesting group is students, who are likely to be young and have low income. First let's check the age distribution of the different groups.
+
+```{r}
+# calculate medians
+data <- data %>% 
+  group_by(soseR) %>% 
+  mutate(mean_age = mean(age, na.rm = TRUE))
+
+# calculate n
+tmp.n <- data %>% 
+  group_by(soseR) %>% 
+  summarise(n.sose=n())
+
+
+p1 <- ggplot(data, aes(x = age)) +
+  geom_histogram(aes(y = ..density..), color ="black", fill="white") +
+  geom_density(alpha = 0.4, color = "#1B1919FF", fill = "#1B191999") +  
+  facet_wrap( . ~ soseR) +
+  geom_text(data = tmp.n, aes(x = 47, y = 0.15, label = n.sose), size = 3) + # add n to facets
+  theme(axis.text.x = element_text(angle=70)) +
+  labs(title = "Age by socioeconomic status",
+       subtitle = "Study population, 2019-2020",
+       x =  "Age") +
+    geom_vline(data = data, aes(xintercept = mean_age), color = "darkred", linetype = "dashed")
+
+p1
+```
+Students are significantly younger compared to the other groups. Manual workers as well as the unknown/NA groups are slightly younger, while individuals in the self-employed and upper-level employee group are slightly older.  
+
+```{r}
+p2 <- ggplot(data) + 
+  aes(x = soseR, fill = hc.type, by = soseR) +
+  scale_fill_manual(values = c("#00466BFF","#ED0000FF", "#42b540FF", "#0099B4FF", "#925E9FFF", "#FDAF91FF", "#AD002AFF", "#ADB6B6FF")) +
+  geom_bar(position = "fill") +
+  theme(
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major.y = element_line(color="gray", linetype= "dashed"),
+    panel.background = element_rect(fill = "white")) + 
+  scale_y_continuous(
+    labels = scales::comma_format(), 
+    expand = expansion(add = 0)) + # removes empty space from figure edges (top and bottom, because this is y scale)
+    labs(title = "Proportion of hormonal contraceptive type by socioeconomic status", 
+         subtitle = "Study data, 2019-2020",
+         x = "Socioeconomic status", 
+         y = "Proportional number of hormonal contraception") +
+  coord_flip()
+p2
+```
+
+There does seem to be variability in use of hormonal contraception between the different socioeconomic groups. Non-use is quite high among pensioners and self-employed, which brings the question how much of this is due to age. Let's facet the plot by the age category variable to check.
+
+```{r}
+p3 <- plot_grid(p2,p1)
+p3
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/HC_soceco.pdf"
+ggsave(filename=filename, p3, width = 360, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+Since students are significantly younger, use of EE is much more common in this group. 
+
+
+```{r}
+# add an age category
+data <- data %>% 
+  mutate(age_group = case_when(age <20 ~ "15-20",
+                               age <25 ~ "21-24",
+                               age <30 ~ "25-29",
+                               age <35 ~ "30-34",
+                               age <40 ~ "35-39",
+                               age <45 ~ "40-44",
+                               age <50 ~ "45-49",
+                               age <56 ~ "50-55")) 
+
+
+# proportional HC use
+p <- ggplot(data) + 
+  aes(x = soseR, fill = hc.type, by = soseR) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("#00466BFF","#ED0000FF", "#42b540FF", "#0099B4FF", "#925E9FFF", "#FDAF91FF", "#AD002AFF", "#ADB6B6FF")) +
+  facet_grid(~age_group) +
+  theme(
+    axis.text.x = element_text(),
+    panel.grid.major.y = element_line(color="gray", linetype= "dashed"),
+    panel.background = element_rect(fill = "white")) + 
+  scale_y_continuous(
+    labels = scales::comma_format(), 
+    expand = expansion(add = 0)) + # removes empty space from figure edges (top and bottom, because this is y scale)
+    labs(title = "Proportion of hormonal contraceptive use by socioeconomic group and age", x = "Socioeconomic group", y = "Proportion")  +
+  coord_flip()
+p
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/HC_soceco_agegroup.pdf"
+ggsave(filename=filename, p, width = 360, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+Most variablility seems to come from the youngest and oldest participants. The pensioner group looks different form the other proportional distributions (implants more common in this group), we might want to consider sensitivity analysis by removing this group (likely to be some pathology being early retirement).
+
+
+```{r}
+p <- ggplot(data, aes(x = Fail, fill = soseR, color = soseR)) +
+  geom_bar(alpha = 0.4) +  
+  facet_wrap( . ~ soseR) +
+  theme(axis.text.x = element_text(angle=70))
+p
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/anemia_soceco.pdf"
+ggsave(filename=filename, p, width = 360, height = 120, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+Indeed, the proportion of cases compared to controls in the pensioner group is higher compared to the other groups. 
+
+```{r}
+# how many anemic pensioners?
+percentage <- data %>% 
+  filter(soseR=="Pensioners") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentagePensioners = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentagePensioners))
+percentage
+```
+
+Almost 30 % anemic in the pensioners group.
+
+Let's compare that to the other groups.
+
+
+
+```{r}
+#  self employed
+percentage <- data %>% 
+  filter(soseR=="self-employed") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageSelfEmployed = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageSelfEmployed))
+percentage
+```
+
+```{r}
+#  upper level employees
+percentage <- data %>% 
+  filter(soseR=="Upper-level employees") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageUpperLevelEmployees = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageUpperLevelEmployees))
+percentage
+
+```
+
+```{r}
+#  lower level employees
+percentage <- data %>% 
+  filter(soseR=="Lower-level employees") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageLowerLevelEmployees = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageLowerLevelEmployees))
+percentage
+
+```
+
+```{r}
+#  manual workers
+percentage <- data %>% 
+  filter(soseR=="Manual workers") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageManualWorkers = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageManualWorkers))
+percentage
+
+```
+
+
+
+```{r}
+#  students
+percentage <- data %>% 
+  filter(soseR=="Students") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageStudents = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageStudents))
+percentage
+```
+
+
+```{r}
+#  others
+percentage <- data %>% 
+  filter(soseR=="Others") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageOthers = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageOthers))
+percentage
+
+```
+
+
+
+```{r}
+#  unknown and NA
+percentage <- data %>% 
+  filter(soseR=="Unknown+NA") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageUnknown = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageUnknown))
+percentage
+
+```
+
+Anemia prevalence significantly higher in the "others" and "unknown and NA" groups as well, although not quite as high as in pensioners.  
+
+
+## Pathologies
+
+Conditions associated with IDA have been selected based on FinRegisty endpoints and our DAG of IDA.
+
+*  SK103: Diabetes mellitus; E10-E14, E89.1 
+*  SK104: Hypothyreosis; C73, E03, E89.0  
+*  SK115: Breast cancer; C50, D05.1   
+*  SK117: Leukemia, lymphoma and other malignancy related to blood or bone marrow; C81-C85, C88, C90-C96, D45-D47, D72.1, D75 
+*  SK128: Gynecologic cancer; D39, C51-C58 
+*  SK130: Other malignancies; C00-C26, C30-C34, C37-C41, C43-C49, C64-C80, C97 (list excluded malignancies of male reproductive organs)
+*  SK202: Connective tissue disease; A04.6, A39.8, A50.5, D76, H20, H30, I33.0, I40.8, J84, K50.9, K51.9, K73.2, K74.3, K75.4, K83.0, L40.5, M02, M05, M06, M08, M13, M30-M35, M45, M46.1, M46.9, M86.6, M94.1, N03, N04, Q44.2  
+*  SK208: IBD; K50, K51  
+*  SK215: Diabetes mellitus, other treatment; E10-E14, E89.1
+* I80: Phlebitis and thrombophlebitis
+* I82: Other venous embolism and thrombosis
+* I26: Pulmonary embolism
+* I21: Myocardial infaction
+* I63: Cerebral infarction
+
+Prevalence of the mentioned conditions in our cohort is available in Table 1. Let's check how prevalent IDA is among women who have received a diagnosis, and compare to the women who have not been diagnosed with the condition. We will exclude ACS, stroke, PI and other thromboembolism from this part of the analysis due to low prevalence within the cohort.
+
+
+### Diabetes
+
+```{r}
+table(anemia.dt$SK215)
+table(anemia.dt$SK103)
+
+table(anemia.dt$SK215,anemia.dt$SK103)
+
+```
+
+Those who have DM diagnosis code have received both codes.  
+
+```{r}
+#  cases
+percentage <- data %>% 
+  filter(DM=="1") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageDM = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageDM))
+percentage
+
+#  controls
+percentage <- data %>% 
+  filter(DM=="0") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageNonDM = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageNonDM))
+percentage
+```
+
+
+### Hypothyroidism
+
+```{r}
+# cases
+percentage <- data %>% 
+  filter(SK104=="1") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageHypoT = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageHypoT))
+percentage
+
+#  controls
+percentage <- data %>% 
+  filter(SK104=="0") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageNonHypoT = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageNonHypoT))
+percentage
+
+```
+
+### Cancer
+
+#### Breast cancer
+
+```{r}
+# cases
+percentage <- data %>% 
+  filter(SK115=="1") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageMammaCa = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageMammaCa))
+percentage
+
+#  controls
+percentage <- data %>% 
+  filter(SK115=="0") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageNonMammaCa = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageNonMammaCa))
+percentage
+
+```
+
+#### Leukemia and lymphoma
+
+```{r}
+# cases
+percentage <- data %>% 
+  filter(SK117=="1") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageLeukLymp = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageLeukLymp)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+percentage
+
+#  controls
+percentage <- data %>% 
+  filter(SK117=="0") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageNonLeukLymp = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageNonLeukLymp)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+percentage
+```
+
+Percentage of IDA in women with leukemia or lymphoma 15.79 %, in women without the diagnosis 18.89 %.
+
+#### Gynecological cancer
+
+```{r}
+# cases
+percentage <- data %>% 
+  filter(SK128=="1") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageGynCa = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageGynCa)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+percentage
+
+#  controls
+percentage <- data %>% 
+  filter(SK128=="0") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageNonGynCa = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageNonGynCa)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+percentage
+```
+
+IDA in women with gynecological cancer 33.33 %, 18.89 % in comparison group.
+
+#### Other malignancies
+
+```{r}
+# cases
+percentage <- data %>% 
+  filter(SK130=="1") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageOtherCa = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageOtherCa)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+percentage
+
+#  controls
+percentage <- data %>% 
+  filter(SK130=="0") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageNonOtherCa = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageNonOtherCa)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+percentage
+```
+
+IDA in women with other type of cancer 27.27 %, 18.89 % in comparison group.
+
+### Connective tissue disease
+
+
+```{r}
+# cases
+percentage <- data %>% 
+  filter(SK202=="1") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageConTis = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageConTis))
+percentage
+
+#  controls
+percentage <- data %>% 
+  filter(SK202=="0") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageNonConTis = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageNonConTis))
+percentage
+```
+
+### IBD
+
+```{r}
+# cases
+percentage <- data %>% 
+  filter(SK208=="1") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageIBD = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageIBD))
+percentage
+
+#  controls
+percentage <- data %>% 
+  filter(SK208=="0") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageNonIBD = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageNonIBD))
+percentage
+```
+
+
+### Heavy menstrual bleeding 
+
+Review data received from FinData.
+
+ICD codes of interest:
+*  N80 (endometriosis)
+*  N84 (polyps of female reproductive organs)
+*  N85 (hyperplasia)
+*  N92 (HMB)
+*  N93 (other uterine bleeding)
+*  D25 (leiomyoma)
+ICPC codes of interest:
+*  X06 (HMB)
+
+Heavy menstrual bleeding is underdiagnosed, lifetime prevalence believed to be 10-4 %. Prevalence in FinRegistry reported as 5.92 % for whole female population and 6.85 % of index population. 
+
+In the original study data, we noted that among anemia cases 25 % had an earlier/later HMB diagnosis vs only 1 % in controls. Accord to table 1, HMB is more common in cases, but not as extreme as in the original study data. This is logical: women see their primary care provider for heavy menstrual bleeding, the GP orders blood tests including blood count, and refers to ob/gyn clinic for further diagnostics and ultrasound. This causes women to first be diagnosed with anemia, and only later with HMB. For an epidemiological study such as this, we are not allowed to "fish" for later diagnosis, but as HMB is underdiagnosed and IUDs under-reported in this cohort, we need to do separate stratification for HMB where we compare IUD to COC-EE. 
+
+
+```{r}
+# cases
+percentage <- data %>% 
+  filter(any.HMB=="1") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageHMB = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageHMB))
+percentage
+
+#  controls
+percentage <- data %>% 
+  filter(any.HMB=="0") %>% 
+  group_by(Fail) %>% 
+  count %>% 
+  summarise(n = (n)) %>% 
+  mutate(PercentageNonHMB = formattable::percent(n / sum(n))) %>% 
+  arrange(desc(PercentageNonHMB))
+percentage
+```
+
+Intrestingly, HMB dg is much more common in cases compared to controls. 
+
+
+#### HMB and HC use
+
+First let's see what the age distribution looks like
+
+```{r}
+# calculate medians
+data <- data %>% 
+  group_by(any.HMB) %>% 
+  mutate(mean_age = mean(age, na.rm = TRUE))
+
+# calculate n
+tmp.n <- data %>% 
+  group_by(any.HMB) %>% 
+  summarise(n.HMB=n())
+
+
+p1 <- ggplot(data, aes(x = age)) +
+  geom_histogram(aes(y = ..density..), color ="black", fill="white") +
+  geom_density(alpha = 0.4, color = "#1B1919FF", fill = "#1B191999") +  
+  facet_wrap(~ any.HMB) +
+  geom_text(data = tmp.n, aes(x = 47, y = 0.15, label = n.HMB), size = 3) + # add n to facets
+  theme(axis.text.x = element_text(angle=70)) +
+  labs(title = "Age distribution and heavy menstrual bleeding",
+       subtitle = "Study population, 2019-2020",
+       x =  "Age") +
+    geom_vline(data = data, aes(xintercept = mean_age), color = "darkred", linetype = "dashed")
+
+p1
+```
+
+As expected, women with HMB dg trend older. Let's add failure event to the figure:
+
+```{r}
+# recode variables for pretty table
+data_v2 <- data
+data_v2$anemia <- ifelse(data$Fail == 1, "Cases", "Controls")
+
+p1_v2 <- ggplot(data_v2, aes(x = age)) +
+  geom_histogram(aes(y = ..density..), color ="black", fill="white") +
+  geom_density(alpha = 0.4, color = "#1B1919FF", fill = "#1B191999") +  
+  facet_grid( anemia ~ any.HMB) +
+  theme(axis.text.x = element_text(angle=70)) +
+  labs(title = "Age distribution, compare heavy menstrual bleeding in cases and controls",
+       subtitle = "Study population, 2019-2020",
+       x =  "Age") +
+    geom_vline(data = data, aes(xintercept = mean_age), color = "darkred", linetype = "dashed")
+
+p1_v2
+```
+Note that these are density plots; the total number of cases with HMB is 826 (4.7 % of the total population), and the total number of controls with HMB is 110 0.6 % of the total population). This figure only illustrates the age distribution differences.	
+
+```{r}
+p2 <- ggplot(data) + 
+  aes(x = any.HMB, fill = hc.type, by = any.HMB) +
+  scale_fill_manual(values = c("#00466BFF","#ED0000FF", "#42b540FF", "#0099B4FF", "#925E9FFF", "#FDAF91FF", "#AD002AFF", "#ADB6B6FF")) +
+  geom_bar(position = "fill") +
+  theme(
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major.y = element_line(color="gray", linetype= "dashed"),
+    panel.background = element_rect(fill = "white")) + 
+  scale_y_continuous(
+    labels = scales::comma_format(), 
+    expand = expansion(add = 0)) + # removes empty space from figure edges (top and bottom, because this is y scale)
+    labs(title = "Heavy menstrual bleeding and proportional use of hormonal contraceptives", 
+         subtitle = "Study data, 2019-2020",
+         x = "HMB, 1 yes, 0 no", 
+         y = "Proportional use of hormonal contraception") +
+  coord_flip()
+p2
+
+```
+
+```{r}
+p3 <- plot_grid(p1, p2, ncol = 1, nrow = 2)
+p3
+
+```
+
+
+Although HC is the first line treatment for HMB, in this cohort, women who have recieved a HMB diagnosis are less likely to use HC. Additionally, IUDs are not more common in the HMB group. It is possible that these women have received their diagnosis and had an IUD inserted during a visit to specialized health care clinics (not get a prescription for it) as opposed to primary health clinics, where they would have to bring their own IUD (and therefore have a prescription for it). We should do sensitivity analysis removing these women. 
+
+
+
+```{r}
+p_HMB <- plot_grid(p_agecat_comb, p3, ncol = 2, nrow = 1)
+p_HMB
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/HC_HMB.pdf"
+ggsave(filename=filename, p_HMB, width = 400, height = 180, units = "mm", dpi = 600, scale = 1.0)
+```
+However, proportional use of women with HMB (mean age 39.5) looks similar to that of the 35-49yo population. Proportional use in non-HMB cohort participants (mean age almost 32.8) looks more similar to the 25-29yo age group. Therefore, it's possible that the proportional use reflects reflects age more than HMB dg.
+
+
+### Dg differences between the cohort
+
+Let's check what other type of dg codes are available for our cohort participants. Is there any major differences between the cohorts that we need to account for?
+
+
+```{r}
+#  create a data frame that includes both shnro and HILMO_ID
+apu.dg1 <-thl2023_5525_hilmo %>% 
+  dplyr::select(shnro, HILMO_ID)# this contains both shnro and HILMO_ID
+
+# dg codes with HILMO_ID
+apu.dg2 <- thl2023_5525_hilmo_icd10
+
+# combine the two datasets so that the resulting dataframe with dg codes includes both HILMO_ID and shnro  
+any.dg <-merge(apu.dg1, apu.dg2, by="HILMO_ID")
+
+rm(apu.dg1)
+rm(apu.dg2)
+
+# keep only the needed columns
+any.dg <- any.dg %>% 
+  dplyr::select(shnro, KOODI)
+
+
+# make an indicator variable of whether the shnro is part of the cohort or not (case, control, no)
+## cases
+tmp.dg.case <- anemia.dt %>% 
+  filter(Fail == "1")
+
+tmp.shnro.case <- as.character(tmp.dg.case$shnro)
+
+## controls
+tmp.dg.control <- anemia.dt %>% 
+  filter(Fail == "0")
+
+tmp.shnro.control <- as.character(tmp.dg.control$shnro)
+
+
+## add indicator 
+any.dg <- any.dg %>% 
+  mutate(cohort = ifelse(
+  shnro %in% tmp.shnro.case, "Case",
+  ifelse(shnro %in% tmp.shnro.control, "Control", "Other")
+))
+
+# remove non-participants
+any.dg <- any.dg %>% 
+  filter(cohort != "Other")
+
+# check how many have at least one diagnosis
+length(unique(any.dg$shnro))
+
+```
+Now let's check how the codes differ by cases and controls based on ICD-10 classicication (not every ICD code is available, here we are only checking for codes that are available for our study). Do any dg codes seem over-represented among cases or cohorts (meaning, are there dg codes that are much more common in cases compared to controls, that are likely to be the cause of the anemia dg), bearing in mind that there is a 1:5 ratio of cases/controls? 
+
+If there are codes that are clearly proportionally more common among cases or controls, we may need to do sensitivity analysis either removing them, or adding them to our model adjustments.
+
+
+#### ICD-10 C codes (Malignant neoplasms) 
+
+```{r}
+summary_table <- any.dg %>% 
+  filter(str_detect(KOODI, "^C")) %>% 
+  group_by(KOODI,cohort) %>% 
+  filter(! duplicated(shnro)) %>%
+  count(KOODI) %>% 
+  arrange(KOODI,desc(n)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+summary_table
+
+write.table(summary_table,
+            file = paste0("W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_tabs/ICD10_C"),sep="/t")
+```
+
+No major differences among cases and controls, however, malignancies will be adjusted for in the final models as anemia is associated with them and some cancers are a contraindication for COCs. 
+
+#### ICD-10 D codes (Other neoplasms, diseases of the blood and blood-forming organs, immune disorders)
+
+```{r}
+summary_table <- any.dg %>% 
+  filter(str_detect(KOODI, "^D")) %>% 
+  group_by(KOODI,cohort) %>% 
+  filter(! duplicated(shnro)) %>%
+  count(KOODI) %>% 
+  arrange(KOODI,desc(n)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+summary_table
+
+write.table(summary_table,
+            file = paste0("W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_tabs/ICD10_D"),sep="/t")
+
+```
+
+Mostly similar dg code distribution, slight over-representation of bleeding disorders among cases, however the overall numbers are very low. D25-codes (leiomyomas, cause for HMB) over-represented among cases, this code is also much more common. 
+
+Note that there are some D50 codes (anemia) among controls, this is due to these diagnoses appearing outside of the study time window.  
+
+#### ICD-10 E codes (Endocrine, nutritional and metabolic diseases)
+
+```{r}
+summary_table <- any.dg %>% 
+  filter(str_detect(KOODI, "^E")) %>% 
+  group_by(KOODI,cohort) %>% 
+  filter(! duplicated(shnro)) %>%
+  count(KOODI) %>% 
+  arrange(KOODI,desc(n)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+summary_table
+
+write.table(summary_table,
+            file = paste0("W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_tabs/ICD10_E"),sep="/t")
+```
+
+Hypothyroidism more common among cases, we are already adjusting for this through Kela codes. DM evenly distributed, except type 1 more common among cases than control (low total number of diagnosis), these will also be adjusted for using Kela codes. Ovarian dysfunction evenly distributed.
+
+E66 (obesity and metabolic syndrome) is over-represented among cases and the complete number of women with these dg codes is relatively high. Therefore, based on our DAG, we need to include the dg code in the adjustment set.
+
+#### ICD-10 F codes (Mental and behavioral disorders)
+
+```{r}
+summary_table <- any.dg %>% 
+  filter(str_detect(KOODI, "^F")) %>% 
+  group_by(KOODI,cohort) %>% 
+  filter(! duplicated(shnro)) %>%
+  count(KOODI) %>% 
+  arrange(KOODI,desc(n)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+summary_table
+
+write.table(summary_table,
+            file = paste0("W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_tabs/ICD10_F"),sep="/t")
+
+```
+
+Even distribution, no need for additional adjustments or sensitivity analysis.
+
+#### ICD-10 G codes (Diseases of the nervous system)
+
+```{r}
+summary_table <- any.dg %>% 
+  filter(str_detect(KOODI, "^G")) %>% 
+  group_by(KOODI,cohort) %>% 
+  filter(! duplicated(shnro)) %>%
+  count(KOODI) %>% 
+  arrange(KOODI,desc(n)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+summary_table
+
+write.table(summary_table,
+            file = paste0("W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_tabs/ICD10_G"),sep="/t")
+
+```
+
+Even distribution here as well.
+
+#### ICD-10 I codes (Diseases of the circulatory system)
+
+```{r}
+summary_table <- any.dg %>% 
+  filter(str_detect(KOODI, "^I")) %>% 
+  group_by(KOODI,cohort) %>% 
+  filter(! duplicated(shnro)) %>%
+  count(KOODI) %>% 
+  arrange(KOODI,desc(n)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+summary_table
+
+write.table(summary_table,
+            file = paste0("W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_tabs/ICD10_I"),sep="/t")
+
+```
+
+Ischemic heart disease more common among cases, these will be adjusted for.
+
+#### ICD-10 K codes (Diseases of the digestive system)
+
+```{r}
+summary_table <- any.dg %>% 
+  filter(str_detect(KOODI, "^K")) %>% 
+  group_by(KOODI,cohort) %>% 
+  filter(! duplicated(shnro)) %>%
+  count(KOODI) %>% 
+  arrange(KOODI,desc(n)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+summary_table 
+
+write.table(summary_table,
+            file = paste0("W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_tabs/ICD10_K"),sep="/t")
+
+```
+
+IBD over-represented among cases but will be adjusted for in the models. No further adjustment needed. 
+
+#### ICD-10 L codes (Diseases of the skin and subcutaneous tissue)
+
+```{r}
+summary_table <- any.dg %>% 
+  filter(str_detect(KOODI, "^L")) %>% 
+  group_by(KOODI,cohort) %>% 
+  filter(! duplicated(shnro)) %>%
+  count(KOODI) %>% 
+  arrange(KOODI,desc(n)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+summary_table
+
+write.table(summary_table,
+            file = paste0("W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_tabs/ICD10_L"),sep="/t")
+
+```
+
+No adjustments needed.
+
+#### ICD-10 N codes (Diseases of the genitourinary syndrome)
+
+```{r}
+summary_table <- any.dg %>% 
+  filter(str_detect(KOODI, "^N")) %>% 
+  group_by(KOODI,cohort) %>% 
+  filter(! duplicated(shnro)) %>%
+  count(KOODI) %>% 
+  arrange(KOODI,desc(n)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+summary_table
+
+write.table(summary_table,
+            file = paste0("W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_tabs/ICD10_N"),sep="/t")
+
+```
+
+HMB diagnosis codes over-represented among cases. Kidney disease seems evenly distributed and the total number is low. 
+
+#### ICD-10 O codes (Pregnancy, childbirth and puerperium)
+
+```{r}
+summary_table <- any.dg %>% 
+  filter(str_detect(KOODI, "^O")) %>% 
+  group_by(KOODI,cohort) %>% 
+  filter(! duplicated(shnro)) %>%
+  count(KOODI) %>% 
+  arrange(KOODI,desc(n)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+summary_table
+
+write.table(summary_table,
+            file = paste0("W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_tabs/ICD10_O"),sep="/t")
+
+```
+
+We are already adjusting for history of childbirth, and pregnancy within one year is an exclusion criteria. Postpartum hemorrhage does not seem to be unevenly distributed among cases and controls. 
+#### ICD-10 V, X and Y codes (External causes of morbidity and mortality)
+
+```{r}
+summary_table <- any.dg %>% 
+  filter(str_detect(KOODI, "^V")) %>% 
+  group_by(KOODI,cohort) %>% 
+  filter(! duplicated(shnro)) %>%
+  count(KOODI) %>% 
+  arrange(KOODI,desc(n)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+summary_table
+
+write.table(summary_table,
+            file = paste0("W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_tabs/ICD10_V"),sep="/t")
+
+```
+
+```{r}
+summary_table <- any.dg %>% 
+  filter(str_detect(KOODI, "^W")) %>% 
+  group_by(KOODI,cohort) %>% 
+  filter(! duplicated(shnro)) %>%
+  count(KOODI) %>% 
+  arrange(KOODI,desc(n)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+summary_table
+
+write.table(summary_table,
+            file = paste0("W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_tabs/ICD10_W"),sep="/t")
+
+```
+
+
+```{r}
+summary_table <- any.dg %>% 
+  filter(str_detect(KOODI, "^X")) %>% 
+  group_by(KOODI,cohort) %>% 
+  filter(! duplicated(shnro)) %>%
+  count(KOODI) %>% 
+  arrange(KOODI,desc(n)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+summary_table
+
+write.table(summary_table,
+            file = paste0("W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_tabs/ICD10_X"),sep="/t")
+```
+
+Injury due to accidents or self-harm (possible cause for hemorrhage) is evenly distributed among cases and controls.
+
+```{r}
+summary_table <- any.dg %>% 
+  filter(str_detect(KOODI, "^Y")) %>% 
+  group_by(KOODI,cohort) %>% 
+  filter(! duplicated(shnro)) %>%
+  count(KOODI) %>% 
+  arrange(KOODI,desc(n)) %>% 
+  mutate(n = ifelse(n < 5, "<5", as.character(n)))  # mutate a new n-column containing that removes observations <5
+summary_table
+
+write.table(summary_table,
+            file = paste0("W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_tabs/ICD10_Y"),sep="/t")
+
+```
+
+Complications of medical and surgical procedures also seem evenly distributed.
+
+
+# Correlograms
+
+Here we display correlation between variables (how closely related the different variables are). Each variable is represented by a row and a column, with the cells showing correlation between them. The number in the cell indicates the strength (-1 to 1) and the direction of the correlation, with negative number indicating negative correlation (increase in a variable tends to cause decrease in the other variable) and positive nuumber indicating positive correlation (increase in a variable tends to cause decrease in the other variable). A number of zer omeans there is no correlation between the variables.
+
+```{r}
+ # remove ungrouping from prior experiments, not needed for this part
+data <- data %>% ungroup()
+```
+
+
+- anemia vs covariates
+- covariates relation to each other as we expect from our DAG
+
+Let's start by checking type of variables in our data set:
+
+```{r}
+# select only covariates we are using
+df <- data %>% 
+  select(seutukunta, Fail, age, sivsr, soseR, ututkuR, DM, SK104, SK115, SK117, SK128, SK130, SK202, SK208, SK215, any.thrombosis, any.HMB, hc.type)
+
+print(str(df))
+```
+Age is a numerical variable, but we want the others to be factors. Let's start by recoding an anemia column for easier interpretation.
+
+```{r}
+ # recode variable for pretty table
+df$anemia <- ifelse(df$Fail == 1, "Cases", "Controls")
+
+# check
+print(table(df$anemia,df$Fail))
+
+```
+
+Then, let's recode the covariates to factor type.
+
+```{r}
+df$anemia<-as.factor(df$anemia)
+df$seutukunta<-as.factor(df$seutukunta)
+df$DM<-as.factor(df$DM)
+df$SK104<-as.factor(df$SK104)
+df$SK115<-as.factor(df$SK115)
+df$SK117<-as.factor(df$SK117)
+df$SK128<-as.factor(df$SK128)
+df$SK130<-as.factor(df$SK130)
+df$SK202<-as.factor(df$SK202)
+df$SK208<-as.factor(df$SK208)
+df$SK215<-as.factor(df$SK215)
+df$any.thrombosis<-as.factor(df$any.thrombosis)
+df$any.HMB<-as.factor(df$any.HMB)
+df$hc.type<-as.factor(df$hc.type)
+
+print(str(df))
+```
+
+I82, I63, I21 only include 1 level and can't be included. The corrplot package allows for different types of variables.
+
+## All covariates except municipality
+
+All covariates except for municipality (68 levels) included.
+
+```{r}
+df_all <- df %>% 
+  select(anemia, age, sivsr, soseR, ututkuR, DM, SK104, SK115, SK117, SK128, SK130, SK202, SK208, any.thrombosis, any.HMB, hc.type)
+
+# Include ONLY factor variables here!
+contrasts_list <- lapply(df_all[, c("anemia", "sivsr", "soseR", "ututkuR", "DM", "SK104", "SK115", "SK117", "SK128", "SK130", "SK202", "SK208", "any.thrombosis", "any.HMB", "hc.type")], contrasts, contrasts = FALSE)
+
+# ONLY CHANGE THE PART WHERE DATA IS ASSIGNED, NOTHING ELSE! -1 makes sure that the intercept is not included in the onehot matrix (we want to encode all without the intercept)
+corr <- model.matrix(~ . - 1, data=df_all, contrasts.arg = contrasts_list)
+
+corr <- corr %>% 
+  cor(use= "pairwise.complete.obs") %>% 
+ ggcorrplot(show.diag = FALSE, 
+            type="lower", 
+            lab=TRUE, 
+            lab_size = 0.5, # changes size of matrix labels
+            tl.cex = 6, # changes size of x and y axis labels
+            col = c("#00468B", "white", "#ED0000"))
+corr
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/correlogram.pdf"
+ggsave(filename=filename, corr, width = 180, height = 180, units = "mm", dpi = 600, scale = 1.0)
+
+
+```
+## All covariates 
+
+```{r}
+df_muni <- df %>% 
+  select(anemia, age, sivsr, soseR, ututkuR, DM, SK104, SK115, SK117, SK128, SK130, SK202, SK208,any.thrombosis, any.HMB, hc.type, seutukunta)
+
+# Include ONLY factor variables here!
+contrasts_list <- lapply(df_muni[, c("anemia", "sivsr", "soseR", "ututkuR", "DM", "SK104", "SK115", "SK117", "SK128", "SK130", "SK202", "any.thrombosis", "any.HMB", "hc.type", "seutukunta")], contrasts, contrasts = FALSE)
+
+# ONLY CHANGE THE PART WHERE DATA IS ASSIGNED, NOTHING ELSE! -1 makes sure that the intercept is not included in the onehot matrix (we want to encode all without the intercept)
+corr_muni <- model.matrix(~ . - 1, data=df_muni, contrasts.arg = contrasts_list)
+
+corr_muni <- corr_muni %>% 
+  cor(use= "pairwise.complete.obs") %>% 
+ ggcorrplot(show.diag = FALSE, 
+            type="lower", 
+            lab=TRUE, 
+            lab_size = 0.5, # changes size of matrix labels
+            tl.cex = 3, # changes size of x and y axis labels
+            col = c("#00468B", "white", "#ED0000")) 
+corr_muni
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/correlogram_municipality.pdf"
+ggsave(filename=filename, corr_muni, width = 180, height = 180, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+No additional correlations by adding municipality.
+
+## Anemia and demographics
+
+
+```{r}
+df_dem <- df %>% 
+  select(anemia, age, sivsr, soseR, ututkuR)
+
+# Include ONLY factor variables here!
+contrasts_list <- lapply(df_dem[, c("anemia", "sivsr", "soseR", "ututkuR")], contrasts, contrasts = FALSE)
+
+# ONLY CHANGE THE PART WHERE DATA IS ASSIGNED, NOTHING ELSE! -1 makes sure that the intercept is not included in the onehot matrix (we want to encode all without the intercept)
+corr <- model.matrix(~ . - 1, data=df_dem, contrasts.arg = contrasts_list)
+
+corr_dem <- corr %>% 
+  cor(use= "pairwise.complete.obs") %>% 
+ ggcorrplot(show.diag = FALSE, 
+            type="lower", 
+            lab=TRUE, 
+            lab_size = 1, # changes size of matrix labels
+            tl.cex = 8, # changes size of x and y axis labels
+            col = c("#00468B", "white", "#ED0000"))
+corr_dem
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/correlogram_demographics.pdf"
+ggsave(filename=filename, corr_dem, width = 180, height = 180, units = "mm", dpi = 600, scale = 1.0)
+
+
+```
+
+
+## Anemia and pathologies
+
+```{r}
+df_path <- df %>% 
+  select(anemia, age, DM, SK104, SK115, SK117, SK128, SK130, SK202, SK208, any.thrombosis, any.HMB)
+
+# Include ONLY factor variables here!
+contrasts_list <- lapply(df_path[, c("anemia","DM", "SK104", "SK115", "SK117", "SK128", "SK130", "SK202", "SK208", "any.thrombosis", "any.HMB")], contrasts, contrasts = FALSE)
+
+# ONLY CHANGE THE PART WHERE DATA IS ASSIGNED, NOTHING ELSE! -1 makes sure that the intercept is not included in the onehot matrix (we want to encode all without the intercept)
+corr <- model.matrix(~ . - 1, data=df_path, contrasts.arg = contrasts_list)
+
+corr_path <- corr %>% 
+  cor(use= "pairwise.complete.obs") %>% 
+ ggcorrplot(show.diag = FALSE, 
+            type="lower", 
+            lab=TRUE, 
+            lab_size = 1, # changes size of matrix labels
+            tl.cex = 8, # changes size of x and y axis labels
+            col = c("#00468B", "white", "#ED0000"))
+corr_path
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/correlogram_pathologies.pdf"
+ggsave(filename=filename, corr_path, width = 180, height = 180, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+Weak anemia correlations for all but HMB, which is showing a positive correlation for cases and negative for controls. This despite higher prevalence of anemia among participants with all other diagnoses included in the study, but not HMB?
+
+## Anemia and HC use
+
+```{r}
+df_HC <- df %>% 
+  select(anemia, hc.type)
+
+# Include ONLY factor variables here!
+contrasts_list <- lapply(df_HC[, c("anemia", "hc.type")], contrasts, contrasts = FALSE)
+
+# ONLY CHANGE THE PART WHERE DATA IS ASSIGNED, NOTHING ELSE! -1 makes sure that the intercept is not included in the onehot matrix (we want to encode all without the intercept)
+corr <- model.matrix(~ . - 1, data=df_HC, contrasts.arg = contrasts_list)
+
+corr_hc <- corr %>% 
+  cor(use= "pairwise.complete.obs") %>% 
+ ggcorrplot(show.diag = FALSE, 
+            type="lower", 
+            lab=TRUE, 
+            lab_size = 1, # changes size of matrix labels
+            tl.cex = 8, # changes size of x and y axis labels
+            col = c("#00468B", "white", "#ED0000"))
+corr_hc
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/correlogram_HC.pdf"
+ggsave(filename=filename, corr_hc, width = 180, height = 180, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+Why is use of HC (specifically COC-EE) correlated with non-use?
+
+## HC and demographics
+
+```{r}
+df_HC_dem <- df %>% 
+  select(age, sivsr, soseR, ututkuR, hc.type)
+
+# Include ONLY factor variables here!
+contrasts_list <- lapply(df_HC_dem[, c("sivsr", "soseR", "ututkuR" ,"hc.type")], contrasts, contrasts = FALSE)
+
+# ONLY CHANGE THE PART WHERE DATA IS ASSIGNED, NOTHING ELSE! -1 makes sure that the intercept is not included in the onehot matrix (we want to encode all without the intercept)
+corr <- model.matrix(~ . - 1, data=df_HC_dem, contrasts.arg = contrasts_list)
+
+corr_hc_dem <- corr %>% 
+  cor(use= "pairwise.complete.obs") %>% 
+ ggcorrplot(show.diag = FALSE, 
+            type="lower", 
+            lab=TRUE, 
+            lab_size = 1, # changes size of matrix labels
+            tl.cex = 6, # changes size of x and y axis labels
+            col = c("#00468B", "white", "#ED0000"))
+corr_hc_dem
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/correlogram_HC_demographics.pdf"
+ggsave(filename=filename, corr_hc_dem, width = 180, height = 180, units = "mm", dpi = 600, scale = 1.0)
+
+```
+
+
+## HC and municipality
+
+```{r}
+df_HC_mun <- df %>% 
+  select(seutukunta, hc.type)
+
+# Include ONLY factor variables here!
+contrasts_list <- lapply(df_HC_mun[, c("seutukunta","hc.type")], contrasts, contrasts = FALSE)
+
+# ONLY CHANGE THE PART WHERE DATA IS ASSIGNED, NOTHING ELSE! -1 makes sure that the intercept is not included in the onehot matrix (we want to encode all without the intercept)
+corr <- model.matrix(~ . - 1, data=df_HC_mun, contrasts.arg = contrasts_list)
+
+corr_hc_mun <- corr %>% 
+  cor(use= "pairwise.complete.obs") %>% 
+ ggcorrplot(show.diag = FALSE, 
+            type="lower", 
+            lab=TRUE, 
+            lab_size = 0.5, # changes size of matrix labels
+            tl.cex = 6, # changes size of x and y axis labels
+            col = c("#00468B", "white", "#ED0000"))
+corr_hc_mun
+
+
+# save figure
+filename <-  "W:/Veripalvelu/sofie/anemia_and_hc/results/data_exploration_figs/correlogram_HC_municipality.pdf"
+ggsave(filename=filename, corr_hc_mun, width = 180, height = 180, units = "mm", dpi = 600, scale = 1.0)
+```
+
+
+
